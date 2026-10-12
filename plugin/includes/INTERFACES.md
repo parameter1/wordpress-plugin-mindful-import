@@ -3,7 +3,7 @@
 Namespace `Mindful_Import`, one class per file, static methods, no autoloader (explicit requires in
 `mindful-import.php`). All classes are loaded before `plugins_loaded`; each class's `init()` registers its hooks.
 
-- `Plugin::init()` (in class-rest.php? NO — in `class-plugin.php`): calls `Settings::init()`, `Auth::init()`,
+- `Plugin::init()` (in `class-plugin.php`): calls `Settings::init()`, `Auth::init()`,
   `Post_Types::init()`, `Fields::init()`, `Changelog::init()`, `Redirects::init()`, `REST::init()`, `Updater::init()`.
   `Plugin::activate()` → `Settings::ensure_defaults()`, `Auth::ensure_role_and_user()`, `Changelog::install_table()`,
   `Changelog::schedule_retention()`. `Plugin::deactivate()` → `Changelog::unschedule_retention()`.
