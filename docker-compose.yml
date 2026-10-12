@@ -1,4 +1,4 @@
-# Local dev harness for Mindful Import. WordPress on http://localhost:8080 (admin / admin after dev/seed.sh).
+# Local dev harness for Mindful Import. WordPress on http://localhost:8089 (admin / admin after dev/seed.sh).
 #   docker compose up -d && dev/seed.sh && dev/smoke.sh
 name: mindful-import-dev
 
@@ -9,8 +9,8 @@ x-wp-env: &wp-env
   WORDPRESS_DB_NAME: wordpress
   WORDPRESS_DEBUG: "1"
   WORDPRESS_CONFIG_EXTRA: |
-    define('WP_HOME', 'http://localhost:8080');
-    define('WP_SITEURL', 'http://localhost:8080');
+    define('WP_HOME', 'http://localhost:8089');
+    define('WP_SITEURL', 'http://localhost:8089');
     define('DISABLE_WP_CRON', false);
 
 x-wp-volumes: &wp-volumes
@@ -38,7 +38,7 @@ services:
   wordpress:
     image: wordpress:latest
     ports:
-      - "127.0.0.1:8080:80"
+      - "127.0.0.1:8089:80"
     environment: *wp-env
     volumes: *wp-volumes
     depends_on:

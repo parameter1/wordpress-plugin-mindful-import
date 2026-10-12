@@ -4,7 +4,7 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-BASE=${BASE:-http://localhost:8080}
+BASE=${BASE:-http://localhost:8089}
 API="$BASE/wp-json/mindful-import/v1"
 WPV2="$BASE/wp-json/wp/v2"
 [ -s dev/.key ] || { echo "dev/.key missing; run dev/seed.sh" >&2; exit 2; }
@@ -17,7 +17,7 @@ pass() { PASS=$((PASS+1)); printf 'PASS  %s\n' "$1"; }
 fail() { FAIL=$((FAIL+1)); printf 'FAIL  %s%s\n' "$1" "${2:+  ($2)}"; }
 warn() { WARNS=$((WARNS+1)); printf 'WARN  %s%s\n' "$1" "${2:+  ($2)}"; }
 
-wp() { docker compose --profile tools run --rm -T cli "$@"; }
+wp() { docker compose --profile tools run --rm -T --quiet-pull cli "$@" 2> >(grep -v -E "^ Container |^$" >&2); }
 wpv() { wp "$@" 2>/dev/null | tr -d '\r' | tail -n1 | tr -d '[:space:]'; }
 
 # get url [header] -> body on stdout
@@ -58,6 +58,7 @@ echo "== discovery"
 expect_jq "discovery: plugin.version" "$API/discovery" '.plugin.version | type=="string" and length>0' "$H"
 expect_jq "discovery: news forced show_in_rest" "$API/discovery" '[.post_types[] | select(.name=="news") | .show_in_rest] == [true]' "$H"
 expect_jq "discovery: secret_internal absent" "$API/discovery" '[.post_types[] | select(.name=="secret_internal")] | length == 0' "$H"
+expect_status "secret_internal: no REST route even with key" GET "$BASE/wp-json/wp/v2/secret_internal" 404 "$H"
 expect_jq "discovery: Redirection listed in plugins" "$API/discovery" '[.plugins[] | select(.name|test("Redirection"))] | length > 0' "$H" $((1-REDIR))
 expect_jq "discovery: changes.head_id is a number" "$API/discovery" '.changes.head_id | type=="number"' "$H"
 

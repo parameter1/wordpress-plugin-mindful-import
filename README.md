@@ -137,8 +137,12 @@ Release flow:
 
 Requires Docker, `curl` and `jq`.
 
+> **Do not run `wp plugin install … --force` against the harness.** `plugin/` is bind-mounted into the
+> container as the plugin folder, so a forced reinstall deletes your working copy on the host. To check the
+> zip, unzip it and diff it against `plugin/` instead (`scripts/build-zip.sh` then `diff -rq`).
+
 ```sh
-docker compose up -d          # WordPress on http://localhost:8080 + MySQL 8 (project: mindful-import-dev)
+docker compose up -d          # WordPress on http://localhost:8089 + MySQL 8 (project: mindful-import-dev)
 dev/seed.sh                   # install, activate, seed fixtures, write a key to dev/.key (admin / admin)
 dev/smoke.sh                  # end-to-end assertions; prints "SMOKE: N passed, M failed"; rotates the key
 scripts/build-zip.sh          # dist/mindful-import-<version>.zip

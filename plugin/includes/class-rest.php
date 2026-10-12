@@ -133,6 +133,10 @@ class REST {
 
 		$post_types = array();
 		foreach ( get_post_types( array(), 'objects' ) as $type ) {
+			// Only advertise what an importer can fetch: public types and anything already in REST.
+			if ( ! $type->public && ! $type->show_in_rest && 'attachment' !== $type->name ) {
+				continue;
+			}
 			$counts   = wp_count_posts( $type->name );
 			$statuses = array( 'publish', 'draft', 'pending', 'private', 'future', 'trash' );
 			if ( 'attachment' === $type->name ) {
@@ -158,6 +162,9 @@ class REST {
 
 		$taxonomies = array();
 		foreach ( get_taxonomies( array(), 'objects' ) as $tax ) {
+			if ( ! $tax->public && ! $tax->show_in_rest ) {
+				continue;
+			}
 			$count        = wp_count_terms(
 				array(
 					'taxonomy'   => $tax->name,

@@ -5,7 +5,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-wp() { docker compose --profile tools run --rm -T cli "$@"; }
+wp() { docker compose --profile tools run --rm -T --quiet-pull cli "$@" 2> >(grep -v -E "^ Container |^$" >&2); }
 # Single trimmed value (last line; WP_DEBUG notices can precede it).
 wpv() { wp "$@" | tr -d '\r' | tail -n1 | tr -d '[:space:]'; }
 warn() { printf 'WARN: %s\n' "$*" >&2; }
@@ -13,14 +13,19 @@ log() { printf '==> %s\n' "$*"; }
 
 log "Waiting for WordPress files and database"
 for i in $(seq 1 60); do
-  if wp core version >/dev/null 2>&1 && wp db check >/dev/null 2>&1; then break; fi
+  # `wp db check` uses the mariadb client, which fails TLS against MySQL 8; `core is-installed`
+  # exits 0 (installed) or 1 (not yet) once the DB is reachable, and 2+ on a connection error.
+  if wp core version >/dev/null 2>&1; then
+    rc=0; wp core is-installed >/dev/null 2>&1 || rc=$?
+    [ "$rc" -le 1 ] && break
+  fi
   [ "$i" = 60 ] && { echo "WordPress never came up (is 'docker compose up -d' running?)" >&2; exit 1; }
   sleep 2
 done
 
 if ! wp core is-installed >/dev/null 2>&1; then
   log "Installing WordPress"
-  wp core install --url=http://localhost:8080 --title="Mindful Import Dev" \
+  wp core install --url=http://localhost:8089 --title="Mindful Import Dev" \
     --admin_user=admin --admin_password=admin --admin_email=admin@example.com --skip-email
 fi
 
@@ -128,6 +133,6 @@ printf '%s\n' "$KEY" > dev/.key
 chmod 600 dev/.key
 
 echo
-echo "Discovery: http://localhost:8080/wp-json/mindful-import/v1/discovery"
+echo "Discovery: http://localhost:8089/wp-json/mindful-import/v1/discovery"
 echo "Key file:  $(pwd)/dev/.key   (header: X-Mindful-Import-Key)"
-echo "Admin:     http://localhost:8080/wp-admin/  admin / admin"
+echo "Admin:     http://localhost:8089/wp-admin/  admin / admin"
