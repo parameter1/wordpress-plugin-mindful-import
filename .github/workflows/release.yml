@@ -1,0 +1,35 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify tag matches plugin Version header
+        run: |
+          VERSION=$(sed -n 's/^[[:space:]]*\*[[:space:]]*Version:[[:space:]]*\([^[:space:]]*\).*/\1/p' plugin/mindful-import.php | head -n1)
+          CONST=$(sed -n "s/.*define( *'MINDFUL_IMPORT_VERSION', *'\([^']*\)'.*/\1/p" plugin/mindful-import.php)
+          TAG="${GITHUB_REF_NAME#v}"
+          echo "tag=$TAG header=$VERSION constant=$CONST"
+          if [ "$TAG" != "$VERSION" ] || [ "$TAG" != "$CONST" ]; then
+            echo "::error::Tag v$TAG does not match Version header ($VERSION) and MINDFUL_IMPORT_VERSION ($CONST)"
+            exit 1
+          fi
+
+      - name: Build zip
+        run: scripts/build-zip.sh
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          generate_release_notes: true
