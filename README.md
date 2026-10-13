@@ -82,7 +82,27 @@ made by the import user itself are not logged. A daily WP-Cron job deletes entri
   plaintext appears once, at generation. Neither `settings` nor `discovery` ever returns the hash or the salt.
 - **Dedicated role and user.** Key requests run as a dedicated `mindful-import` user with the `mindful_import`
   role. The role has read and edit capabilities plus `list_users`, and no `manage_options`, `delete_*`,
-  `publish_*` or plugin and theme capabilities.
+  `publish_*` or plugin and theme capabilities. The user's password is 64 random characters generated at
+  creation and never shown to anyone, not even Parameter1. The account cannot log in interactively and
+  cannot hold application passwords. The only secret that leaves the site is the import key.
+- **Why the role carries `edit_*` capabilities.** The plugin's own routes need no capabilities at all. The
+  edit capabilities exist only for core `wp/v2` routes, because WordPress has no "read unpublished content"
+  capability and uses edit permissions as the proxy for it:
+  - `edit_posts` / `edit_pages`: listing `?status=draft`, `pending`, `future` or `trash`
+    (`sanitize_post_statuses`), and `context=edit`, which returns the raw body and registered `meta`.
+  - `edit_others_posts`, `edit_published_posts`, `edit_private_posts` and the page equivalents: reading a
+    single unpublished item. Core maps `read_post` on a draft to `edit_post`, which needs `edit_others_posts`
+    for items the import user did not write.
+  - `manage_categories`: `context=edit` on terms. `upload_files`: `context=edit` on attachments.
+    `list_users`: `/wp/v2/users?context=edit` (emails, roles, usernames).
+  - `read`, `read_private_posts`, `read_private_pages` are the only purely read capabilities and cover
+    published and private content only.
+  These capabilities are inert in practice: every key-authenticated request that is not GET/HEAD/OPTIONS is
+  refused with 403 before dispatch, the key is honoured on REST URIs only (never `wp-admin` or
+  `admin-ajax`), and the account cannot log in. Removing the edit capabilities would drop drafts, scheduled,
+  pending and trashed content and `context=edit` from the import; the change log would still report
+  scheduled posts when they publish. If a site requires a stored role with no edit capabilities, that is
+  the trade-off. Decision 2026-10-13: keep the capabilities and rely on the 403 gate.
 - **Options deny-list.** Options matched by a prefix are dropped (and counted in `denied_count`) when their
   name contains `key`, `secret`, `token`, `password`, `passwd`, `salt`, `smtp`, `auth`, `private` or `license`.
   Exact allowlist entries are an explicit admin choice and bypass the deny-list.
