@@ -51,8 +51,9 @@ class Plugin {
 	}
 
 	/**
-	 * Runs once per plugin version, since auto-updates never fire the activation hook: fills in
-	 * new defaults, resets the role's capabilities and drops change-log rows about the service account.
+	 * Runs once per plugin version, since auto-updates and mu-plugin installs never fire the
+	 * activation hook: fills in new defaults, resets the role's capabilities, makes sure the
+	 * retention cron exists and drops change-log rows about the service account.
 	 */
 	public static function maybe_upgrade() {
 		if ( MINDFUL_IMPORT_VERSION === (string) Settings::get( 'installed_version', '' ) ) {
@@ -60,6 +61,7 @@ class Plugin {
 		}
 		Settings::ensure_defaults();
 		Auth::ensure_role_and_user();
+		Changelog::schedule_retention();
 		Changelog::forget_import_user();
 		Settings::delete( 'last_seen' ); // Pre-release versions recorded the last key use here.
 		Settings::update( array( 'installed_version' => MINDFUL_IMPORT_VERSION ) );

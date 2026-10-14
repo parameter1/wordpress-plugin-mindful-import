@@ -82,7 +82,8 @@ A custom table records `create`, `update`, `publish`, `unpublish`, `trash`, `unt
 (every post type), attachments, terms and users. Each entry carries the old and new status. Ids only ever
 increase, so an importer stores `head_id` (or `next_after`) and later asks for `changes?after=<id>`. Changes
 made by the import user itself are not logged, and neither is that account's own creation or update. A daily
-WP-Cron job deletes entries older than `retention_days` (default 90, minimum 7).
+WP-Cron job deletes entries older than `retention_days` (default 90, minimum 7); it is scheduled on activation
+and again on the first load of each new version, so mu-plugin installs, which never activate, get it too.
 
 ## Configuration (Settings → Mindful Import)
 
