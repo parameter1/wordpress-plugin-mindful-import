@@ -117,12 +117,15 @@ expect_jq "posts: mindful_rendered_content runs shortcodes" "$P&mindful_render=1
 
 echo "== term meta"
 expect_jq "categories: term_meta_fields.mi_color" "$WPV2/categories?search=Industry" '.[0].term_meta_fields.mi_color == "blue"' "$H"
+expect_jq "categories: empty term meta is {} not []" "$WPV2/categories?slug=uncategorized" '.[0].term_meta_fields | type == "object" and length == 0' "$H"
+expect_jq "posts: empty post meta is {} not []" "$WPV2/posts?status=draft&context=edit&search=Draft" '.[0].post_meta_fields | type == "object"' "$H"
 expect_status "news_topic: 200 with key" GET "$WPV2/news_topic" 200 "$H"
 expect_jq "news_topic: term_meta_fields.mi_order" "$WPV2/news_topic" '.[0].term_meta_fields.mi_order == "3"' "$H"
 
 echo "== users"
 expect_jq "users: subscriber with no posts included" "$API/users" '[.[] | select(.login=="nobody")] | length == 1' "$H"
 expect_jq "users: the plugin's own account is excluded" "$API/users?per_page=500" '[.[] | select(.login=="mindful-import")] | length == 0' "$H"
+expect_jq "users: meta is always an object" "$API/users" '[.[] | .meta | type] | unique == ["object"]' "$H"
 expect_jq "users: no pass/session/capabilities keys" "$API/users" '[.. | objects | keys[]] | map(select(test("pass|session|capabilit"))) | length == 0' "$H"
 expect_jq "users: jane meta.twitter" "$API/users" '[.[] | select(.login=="jane") | .meta.twitter] == ["janedoe"]' "$H"
 wp user meta update jane focus_keyword robotics >/dev/null 2>&1

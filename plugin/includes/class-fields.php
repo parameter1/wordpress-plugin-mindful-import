@@ -123,7 +123,7 @@ class Fields {
 		}
 		$meta   = get_post_meta( $post->ID );
 		$fields = self::flatten_meta( is_array( $meta ) ? $meta : array() );
-		return apply_filters( 'mindful_import_post_fields', $fields, $post );
+		return self::as_object( apply_filters( 'mindful_import_post_fields', $fields, $post ) );
 	}
 
 	/**
@@ -144,7 +144,20 @@ class Fields {
 		}
 		$meta   = get_term_meta( $term->term_id );
 		$fields = self::flatten_meta( is_array( $meta ) ? $meta : array() );
-		return apply_filters( 'mindful_import_term_fields', $fields, $term );
+		return self::as_object( apply_filters( 'mindful_import_term_fields', $fields, $term ) );
+	}
+
+	/**
+	 * Keeps a meta map an object in JSON even when empty: PHP's empty array would encode as [].
+	 *
+	 * @param mixed $fields Flattened meta (array), or whatever a filter returned.
+	 * @return mixed array when non-empty, stdClass when empty, other values untouched.
+	 */
+	public static function as_object( $fields ) {
+		if ( is_array( $fields ) && empty( $fields ) ) {
+			return new \stdClass();
+		}
+		return $fields;
 	}
 
 	/**

@@ -477,7 +477,11 @@ class REST {
 		 * @param array    $fields
 		 * @param \WP_User $user
 		 */
-		return apply_filters( 'mindful_import_user_fields', $fields, $user );
+		$fields = apply_filters( 'mindful_import_user_fields', $fields, $user );
+		if ( is_array( $fields ) && isset( $fields['meta'] ) && is_array( $fields['meta'] ) ) {
+			$fields['meta'] = Fields::as_object( $fields['meta'] );
+		}
+		return $fields;
 	}
 
 	/**

@@ -41,7 +41,7 @@ These fields are registered only on key-authenticated requests. Anonymous respon
 
 - `post_meta_fields` on posts, pages, every public CPT and attachments. All post meta is flattened into the
   shape base-imports already reads: a single-value array becomes a scalar, a multi-value meta stays an array,
-  and `.` in a key becomes `__`.
+  and `.` in a key becomes `__`. An object with no meta gives `{}`, never `[]`.
 - `term_meta_fields` on every public taxonomy (same shape).
 - `mindful_rendered_content` on non-attachment post types when the request adds `?mindful_render=1`. This is
   `the_content` with shortcodes and blocks rendered. It can be turned off in settings.
