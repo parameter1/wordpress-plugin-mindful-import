@@ -30,7 +30,7 @@ Generating a new key revokes the old one straight away.
 | `discovery` | none | `{plugin:{version,hook_api}, wordpress, post_types:[{name,label,public,show_in_rest,rest_base,hierarchical,taxonomies,count}], taxonomies, plugins:[{file,name,version}], theme, settings, changes:{head_id}, …}`: everything needed to plan a run |
 | `options` | `names` (comma list, narrows the result) | `{options:[{key,value}], denied_count}` |
 | `settings` | none | Plugin settings without secrets: `{post_types, taxonomies, options_allowlist, options_prefixes, retention_days, render_enabled, key_created_at, version, …}` |
-| `users` | `page` (1), `per_page` (100, max 500) | `[{id,login,email,display_name,nicename,url,registered,roles,first_name,last_name,nickname,description,avatar_url,meta}]`. Includes users with no posts. Sends `X-WP-Total` / `X-WP-TotalPages` |
+| `users` | `page` (1), `per_page` (100, max 500) | `[{id,login,email,display_name,nicename,url,registered,roles,first_name,last_name,nickname,description,avatar_url,meta}]`. Includes users with no posts, never the plugin's own `mindful-import` account. Sends `X-WP-Total` / `X-WP-TotalPages` |
 | `changes` | `after` (id, 0), `limit` (100, max 500), `object_type` (`post`/`attachment`/`term`/`user`), `since` (ISO 8601) | `{changes:[{id,object_type,object_id,post_type,taxonomy,action,old_status,new_status,changed_at,user_id}], head_id, has_more, next_after}` |
 | `changes/latest` | none | `{head_id, latest, …}` |
 | `redirects` | `provider` (`redirection`, `safe-redirect-manager`, `yoast-premium`) | `{providers:[…], redirects:[{source,target,code,enabled,regex,provider,…}], count}` |
@@ -81,8 +81,8 @@ only, through `user_has_cap`, and are never stored. Outside such a request the a
 A custom table records `create`, `update`, `publish`, `unpublish`, `trash`, `untrash` and `delete` for posts
 (every post type), attachments, terms and users. Each entry carries the old and new status. Ids only ever
 increase, so an importer stores `head_id` (or `next_after`) and later asks for `changes?after=<id>`. Changes
-made by the import user itself are not logged. A daily WP-Cron job deletes entries older than
-`retention_days` (default 90, minimum 7).
+made by the import user itself are not logged, and neither is that account's own creation or update. A daily
+WP-Cron job deletes entries older than `retention_days` (default 90, minimum 7).
 
 ## Configuration (Settings → Mindful Import)
 

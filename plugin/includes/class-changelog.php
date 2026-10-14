@@ -126,6 +126,9 @@ class Changelog {
 		if ( $import > 0 && $user_id === $import ) {
 			return false;
 		}
+		if ( 'user' === $object_type && self::is_import_user( (int) $object_id ) ) {
+			return false; // The plugin's own service account is not content.
+		}
 
 		$entry = array(
 			'object_type' => (string) $object_type,
@@ -151,6 +154,32 @@ class Changelog {
 
 		self::$seen[ $entry['object_type'] . ':' . $entry['object_id'] ] = true;
 		return false !== $wpdb->insert( self::table(), $entry );
+	}
+
+	/**
+	 * Whether a user id is the plugin's service account. Works during its creation (the row exists
+	 * before the id is stored) and after its deletion (the stored id remains).
+	 *
+	 * @param int $user_id User id.
+	 * @return bool
+	 */
+	private static function is_import_user( $user_id ) {
+		if ( $user_id <= 0 ) {
+			return false;
+		}
+		return $user_id === (int) Auth::import_user_id() || $user_id === (int) Settings::get( 'import_user_id', 0 );
+	}
+
+	/**
+	 * Deletes every entry about the service account (earlier versions logged its creation).
+	 */
+	public static function forget_import_user() {
+		global $wpdb;
+		$id = (int) Auth::import_user_id();
+		if ( $id <= 0 ) {
+			return;
+		}
+		$wpdb->delete( self::table(), array( 'object_type' => 'user', 'object_id' => $id ), array( '%s', '%d' ) );
 	}
 
 	/**

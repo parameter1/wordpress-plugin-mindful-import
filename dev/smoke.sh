@@ -122,6 +122,7 @@ expect_jq "news_topic: term_meta_fields.mi_order" "$WPV2/news_topic" '.[0].term_
 
 echo "== users"
 expect_jq "users: subscriber with no posts included" "$API/users" '[.[] | select(.login=="nobody")] | length == 1' "$H"
+expect_jq "users: the plugin's own account is excluded" "$API/users?per_page=500" '[.[] | select(.login=="mindful-import")] | length == 0' "$H"
 expect_jq "users: no pass/session/capabilities keys" "$API/users" '[.. | objects | keys[]] | map(select(test("pass|session|capabilit"))) | length == 0' "$H"
 expect_jq "users: jane meta.twitter" "$API/users" '[.[] | select(.login=="jane") | .meta.twitter] == ["janedoe"]' "$H"
 wp user meta update jane focus_keyword robotics >/dev/null 2>&1
@@ -162,6 +163,12 @@ else
 
   expect_jq "changes: object_type=user returns only users" "$API/changes?object_type=user" "$ENTRIES | all(.object_type==\"user\")" "$H"
   expect_jq "changes: user update was logged" "$API/changes?object_type=user&after=$HEAD" "$ENTRIES | length >= 1" "$H" 1
+  # The service account's own creation was logged by earlier versions; the upgrade purges it and new
+  # changes to it are never recorded.
+  IMPORT_ID=$(get "$API/settings" "$H" | jq -r '.import_user_id')
+  wp option patch delete mindful_import installed_version >/dev/null 2>&1
+  wp user update mindful-import --display_name="Mindful Import" >/dev/null 2>&1   # loads the plugin (upgrade runs), then edits the account
+  expect_jq "changes: no entries about the plugin's own account (id $IMPORT_ID)" "$API/changes?object_type=user&limit=500" "$ENTRIES | map(select(.object_id == $IMPORT_ID)) | length == 0" "$H"
 fi
 
 echo "== redirects"

@@ -406,7 +406,8 @@ class REST {
 	}
 
 	/**
-	 * GET users: every user (authors or not), paginated, with allowlisted meta.
+	 * GET users: every user (authors or not) except the plugin's own service account, paginated,
+	 * with allowlisted meta.
 	 *
 	 * @param \WP_REST_Request $request Request.
 	 * @return \WP_REST_Response
@@ -423,6 +424,7 @@ class REST {
 				'order'       => 'ASC',
 				'fields'      => 'all',
 				'count_total' => true,
+				'exclude'     => array_filter( array( (int) Auth::import_user_id() ) ),
 			)
 		);
 		$total = (int) $query->get_total();
