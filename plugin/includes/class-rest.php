@@ -22,9 +22,17 @@ class REST {
 	const OPTION_DENY = '/(key|secret|token|password|passwd|salt|smtp|auth|private|license)/i';
 
 	/**
-	 * User meta keys never returned.
+	 * User meta keys never returned. One pattern per concern:
+	 *  1. credential-looking names, matched as whole tokens (split on _ and -) so keyword, passions
+	 *     and secretary pass; "key" is denied only as the last token (api_key), so key_skills passes;
+	 *  2. core account keys behind any table prefix (wp_capabilities, wp_2_user_level, session_tokens);
+	 *  3. admin UI preferences and screen options.
 	 */
-	const USER_META_DENY = '/(pass|session|capabilities|user_level|token|secret|key|dismissed|wp_[a-z0-9_]*settings|syntax_highlighting|closedpostboxes|metaboxhidden|meta-box-order|screen_layout|edit_[a-z_]+_per_page|nav_menu_recently_edited|community-events-location|show_admin_bar_front|admin_color|use_ssl|rich_editing|comment_shortcuts|locale|dashboard_quick_press_last_post_id)/i';
+	const USER_META_DENY = array(
+		'/(^|[_-])(pass|password|passwd|tokens?|secrets?|apikey|accesstoken|authtoken|secretkey|privatekey)([_-]|$)|(^|[_-])keys?$/i',
+		'/(^|_)(session_tokens|capabilities|user_level|user-settings|user-settings-time|persisted_preferences|dashboard_quick_press_last_post_id|media_library_mode)$/i',
+		'/^(dismissed_|closedpostboxes_|metaboxhidden_|meta-box-order_|screen_layout_|manage.+columnshidden$|.+_per_page$|nav_menu_recently_edited$|community-events-location$|show_admin_bar_front$|show_welcome_panel$|admin_color$|use_ssl$|rich_editing$|syntax_highlighting$|comment_shortcuts$|locale$|default_password_nag$)/i',
+	);
 
 	/**
 	 * Hooks rest_api_init.
@@ -440,7 +448,7 @@ class REST {
 	private static function user_fields( \WP_User $user ) {
 		$meta = array();
 		foreach ( (array) get_user_meta( $user->ID ) as $key => $values ) {
-			if ( ! preg_match( self::USER_META_DENY, (string) $key ) ) {
+			if ( ! self::is_denied_user_meta( (string) $key ) ) {
 				$meta[ $key ] = $values;
 			}
 		}
@@ -469,5 +477,20 @@ class REST {
 		 * @param \WP_User $user
 		 */
 		return apply_filters( 'mindful_import_user_fields', $fields, $user );
+	}
+
+	/**
+	 * Whether a user meta key matches USER_META_DENY.
+	 *
+	 * @param string $key Meta key.
+	 * @return bool
+	 */
+	private static function is_denied_user_meta( $key ) {
+		foreach ( self::USER_META_DENY as $pattern ) {
+			if ( preg_match( $pattern, $key ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 }

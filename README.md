@@ -127,8 +127,10 @@ made by the import user itself are not logged. A daily WP-Cron job deletes entri
 - **Options deny-list.** Options matched by a prefix are dropped (and counted in `denied_count`) when their
   name contains `key`, `secret`, `token`, `password`, `passwd`, `salt`, `smtp`, `auth`, `private` or `license`.
   Exact allowlist entries are an explicit admin choice and bypass the deny-list.
-- **User meta filtering.** Passwords, session tokens, capabilities, user level, any key, token or secret
-  values, and admin UI preferences are never returned.
+- **User meta filtering.** Session tokens, capabilities, user level, admin UI preferences and screen options
+  are never returned, nor is any key named like a credential: `pass`/`password`, `token`, `secret`, `apikey`
+  and friends as whole name parts, and `key` as the last part (`api_key`). Matching is by whole token, so
+  `focus_keyword`, `passions` or `key_skills` come through.
 - **403 on writes and on non-content routes.** See the read-only guarantee above.
 - **Uninstall** removes the option, the change-log table, the role and the import user.
 

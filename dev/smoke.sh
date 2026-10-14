@@ -119,6 +119,10 @@ echo "== users"
 expect_jq "users: subscriber with no posts included" "$API/users" '[.[] | select(.login=="nobody")] | length == 1' "$H"
 expect_jq "users: no pass/session/capabilities keys" "$API/users" '[.. | objects | keys[]] | map(select(test("pass|session|capabilit"))) | length == 0' "$H"
 expect_jq "users: jane meta.twitter" "$API/users" '[.[] | select(.login=="jane") | .meta.twitter] == ["janedoe"]' "$H"
+wp user meta update jane focus_keyword robotics >/dev/null 2>&1
+wp user meta update jane api_key sk_test_123 >/dev/null 2>&1
+expect_jq "users: focus_keyword kept (token match, not substring)" "$API/users" '[.[] | select(.login=="jane") | .meta.focus_keyword] == ["robotics"]' "$H"
+expect_jq "users: api_key dropped" "$API/users" '[.[] | select(.login=="jane") | .meta | has("api_key")] == [false]' "$H"
 if curl -s -D - -o /dev/null -H "$H" "$API/users" | grep -qi '^x-wp-total:'; then pass "users: X-WP-Total header"; else fail "users: X-WP-Total header"; fi
 
 echo "== options"
