@@ -66,6 +66,7 @@ echo "== core routes: meta fields"
 expect_status "news: 200 with key" GET "$WPV2/news" 200 "$H"
 expect_jq "news: post_meta_fields.mi_source" "$WPV2/news" '.[0].post_meta_fields.mi_source == "wire"' "$H"
 expect_status "news: 200 without key" GET "$WPV2/news" 200
+expect_jq "posts: anonymous response has no post_meta_fields key" "$WPV2/posts?per_page=1" '(.[0] | has("post_meta_fields")) | not'
 expect_jq "news: no post_meta_fields without key" "$WPV2/news" '.[0] | (has("post_meta_fields") | not) or .post_meta_fields == null'
 P="$WPV2/posts?search=Published"
 expect_jq "posts: dotted key flattened to mi__dotted" "$P" '.[0].post_meta_fields.mi__dotted == "dotval"' "$H"

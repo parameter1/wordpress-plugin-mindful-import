@@ -37,7 +37,7 @@ Generating a new key revokes the old one straight away.
 
 ### Fields added to core routes (`/wp-json/wp/v2/…`)
 
-These fields appear only on key-authenticated requests. Anonymous responses are unchanged.
+These fields are registered only on key-authenticated requests. Anonymous responses are byte-for-byte what core returns (no `post_meta_fields` key at all).
 
 - `post_meta_fields` on posts, pages, every public CPT and attachments. All post meta is flattened into the
   shape base-imports already reads: a single-value array becomes a scalar, a multi-value meta stays an array,
@@ -47,7 +47,11 @@ These fields appear only on key-authenticated requests. Anonymous responses are 
   `the_content` with shortcodes and blocks rendered. It can be turned off in settings.
 - Public post types and taxonomies registered without `show_in_rest` are put into REST (`rest_base` = name),
   so a CPT the theme hid from REST can still be imported. Non-public types stay out.
-- The import user can read drafts, scheduled and private content (`?status=draft&context=edit`).
+- The import user can read drafts, scheduled and private content (`?status=draft&context=edit`). Two core limits
+  to know: WordPress protects the Privacy Policy page (and the front/posts pages) behind `manage_options`, so a
+  draft of those is not returned even though `X-WP-Total` counts it; and `wp/v2/users?context=edit` returns only
+  users the caller may *edit* (just the import user itself), so read users from `mindful-import/v1/users`, which
+  returns everyone with emails, roles and meta.
 
 ### Read-only guarantee
 

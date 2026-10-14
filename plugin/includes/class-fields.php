@@ -27,6 +27,12 @@ class Fields {
 	 * Registers the fields on every REST-visible post type and taxonomy.
 	 */
 	public static function register_fields() {
+		// Only key-authenticated requests get the extra fields; anonymous responses stay unchanged
+		// (no `post_meta_fields: null` key). The callbacks re-check the key as well.
+		if ( ! Auth::is_import_request() ) {
+			return;
+		}
+
 		$meta_schema = array(
 			'description' => __( 'All meta for the object (Mindful Import key required).', 'mindful-import' ),
 			'type'        => array( 'object', 'null' ),
@@ -59,7 +65,7 @@ class Fields {
 
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only flag; auth checked in the callback.
 		$wants_render = isset( $_GET['mindful_render'] ) && '1' === sanitize_text_field( wp_unslash( $_GET['mindful_render'] ) );
-		if ( $wants_render && Settings::get( 'render_enabled' ) && Auth::is_import_request() ) {
+		if ( $wants_render && Settings::get( 'render_enabled' ) ) {
 			foreach ( $post_types as $post_type ) {
 				if ( 'attachment' === $post_type ) {
 					continue;
