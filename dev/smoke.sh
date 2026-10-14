@@ -132,6 +132,8 @@ wp user meta update jane focus_keyword robotics >/dev/null 2>&1
 wp user meta update jane api_key sk_test_123 >/dev/null 2>&1
 expect_jq "users: focus_keyword kept (token match, not substring)" "$API/users" '[.[] | select(.login=="jane") | .meta.focus_keyword] == ["robotics"]' "$H"
 expect_jq "users: api_key dropped" "$API/users" '[.[] | select(.login=="jane") | .meta | has("api_key")] == [false]' "$H"
+expect_jq "users: wpseo_keyword_analysis_disable kept" "$API/users" '[.[] | select(.login=="jane") | .meta.wpseo_keyword_analysis_disable] == ["on"]' "$H"
+expect_jq "users: joomlapass dropped (run-together password hash)" "$API/users" '[.[] | select(.login=="jane") | .meta | has("joomlapass")] == [false]' "$H"
 if curl -s -D - -o /dev/null -H "$H" "$API/users" | grep -qi '^x-wp-total:'; then pass "users: X-WP-Total header"; else fail "users: X-WP-Total header"; fi
 
 echo "== options"

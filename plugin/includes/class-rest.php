@@ -25,11 +25,12 @@ class REST {
 	 * User meta keys never returned. One pattern per concern:
 	 *  1. credential-looking names, matched as whole tokens (split on _ and -) so keyword, passions
 	 *     and secretary pass; "key" is denied only as the last token (api_key), so key_skills passes;
+	 *     a name that ends in pass/password/pwd is denied even run together (joomlapass, userpass);
 	 *  2. core account keys behind any table prefix (wp_capabilities, wp_2_user_level, session_tokens);
 	 *  3. admin UI preferences and screen options.
 	 */
 	const USER_META_DENY = array(
-		'/(^|[_-])(pass|password|passwd|tokens?|secrets?|apikey|accesstoken|authtoken|secretkey|privatekey)([_-]|$)|(^|[_-])keys?$/i',
+		'/(^|[_-])(pass|password|passwd|tokens?|secrets?|apikey|accesstoken|authtoken|secretkey|privatekey)([_-]|$)|(^|[_-])keys?$|(pass|password|passwd|pwd)$/i',
 		'/(^|_)(session_tokens|capabilities|user_level|user-settings|user-settings-time|persisted_preferences|dashboard_quick_press_last_post_id|media_library_mode)$/i',
 		'/^(dismissed_|closedpostboxes_|metaboxhidden_|meta-box-order_|screen_layout_|manage.+columnshidden$|.+_per_page$|nav_menu_recently_edited$|community-events-location$|show_admin_bar_front$|show_welcome_panel$|admin_color$|use_ssl$|rich_editing$|syntax_highlighting$|comment_shortcuts$|locale$|default_password_nag$)/i',
 	);

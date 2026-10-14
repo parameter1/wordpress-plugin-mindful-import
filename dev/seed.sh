@@ -66,6 +66,10 @@ log "Users"
 JANE=$(ensure_user jane jane@example.com author Jane Doe "Jane covers robotics and automation.")
 ensure_user nobody nobody@example.com subscriber No Body "Subscriber with no posts." >/dev/null
 wp user meta update jane twitter janedoe >/dev/null
+# A legitimate Yoast profile key the old substring deny-list dropped, and the Joomla password hash that
+# FG Joomla to WordPress leaves on every migrated user, which must never come through.
+wp user meta update jane wpseo_keyword_analysis_disable on >/dev/null
+wp user meta update jane joomlapass 'not-a-real-hash' >/dev/null
 
 # ---------- terms ----------
 ensure_term() { # taxonomy name
