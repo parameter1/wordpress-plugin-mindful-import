@@ -43,7 +43,7 @@ class REST {
 			'rest_api_init',
 			function () {
 				/**
-				 * Lets companion plugins register routes with REST::add_route().
+				 * Lets site-side code register routes with REST::add_route().
 				 *
 				 * @param string $namespace mindful-import/v1
 				 */

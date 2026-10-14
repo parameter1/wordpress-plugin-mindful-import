@@ -88,7 +88,7 @@ class Auth {
 	}
 
 	/**
-	 * Whether the current request carried a valid key (or a companion authenticated it).
+	 * Whether the current request carried a valid key. Only the key authenticates a request.
 	 *
 	 * @param \WP_REST_Request|null $request Optional request to read the header from.
 	 * @return bool
@@ -126,7 +126,7 @@ class Auth {
 	}
 
 	/**
-	 * Resolves the import user for this request from the header or the companion filter.
+	 * Resolves the import user for this request from the key header.
 	 *
 	 * @param \WP_REST_Request|null $request Request, when available.
 	 */
@@ -143,19 +143,6 @@ class Auth {
 
 		if ( null !== $plain && self::verify_key( $plain ) ) {
 			$user_id = self::import_user_id();
-		}
-
-		if ( ! $user_id && $is_rest ) {
-			/**
-			 * Lets a companion plugin authenticate the request when the key path fails.
-			 *
-			 * @param int|null              $user_id Null when not authenticated.
-			 * @param \WP_REST_Request|null $request Request, when available.
-			 */
-			$filtered = apply_filters( 'mindful_import_authenticate', null, $request );
-			if ( is_numeric( $filtered ) && (int) $filtered > 0 && get_userdata( (int) $filtered ) ) {
-				$user_id = (int) $filtered;
-			}
 		}
 
 		self::$user_id   = $user_id;
@@ -352,7 +339,7 @@ class Auth {
 	/**
 	 * `user_has_cap`: the import user's effective capabilities. During a read-only REST request it
 	 * holds the edit-level reads core REST needs for context=edit and non-published statuses.
-	 * Anywhere else (admin, ajax, cron, CLI, a companion impersonating it) it is a plain subscriber,
+	 * Anywhere else (admin, ajax, cron, CLI, or any code impersonating it) it is a plain subscriber,
 	 * whatever the stored role says.
 	 *
 	 * @param array    $allcaps Capabilities the user has.

@@ -1,9 +1,11 @@
 <?php
 /**
- * Public hook reference for companion plugins. Documentation only: every hook below is
- * emitted by the class named in its doc block. Hook API version: MINDFUL_IMPORT_HOOK_API.
+ * Public hook reference. Documentation only: every hook below is emitted by the class named in
+ * its doc block. Hook API version: MINDFUL_IMPORT_HOOK_API.
  *
- * Detect the core plugin from a companion with:
+ * The plugin needs nothing installed beside it. These hooks are for site-side code (an mu-plugin
+ * or a theme's functions.php) that wants to adjust what the plugin exposes; none of them can
+ * authenticate a request. Detect the plugin with:
  *
  *     if ( function_exists( 'mindful_import' ) && mindful_import()['hook_api'] >= 1 ) { ... }
  *
@@ -106,39 +108,6 @@ defined( 'ABSPATH' ) || exit;
  */
 
 /**
- * Filter: mindful_import_authenticate
- *
- * Lets a companion authenticate a REST request when the X-Mindful-Import-Key check fails.
- * Return a user id to treat the request as an import request, or null to leave it
- * unauthenticated. Emitted by Auth.
- *
- * READ THIS BEFORE HOOKING IT. Whatever this filter returns becomes the current user for the
- * request, so a callback that returns an id on the wrong condition authenticates the world.
- * Verify a secret, and return $user_id (not 0) when yours is absent. The request is then subject
- * to the same limits as a key request: GET/HEAD/OPTIONS only and the allowed-routes list. The
- * returned user's own role decides what it can read; the import user's request-time
- * capabilities are not granted to it.
- *
- * The filter only runs on requests core serves through the REST API (never on admin screens,
- * admin-ajax, cron or XML-RPC). It is usually called before a WP_REST_Request exists (during
- * `init` and `determine_current_user`), in which case $request is null and the callback must
- * read its header from $_SERVER. Post types this plugin forces into REST, and the meta fields,
- * are decided at that early point, so a callback that only works with the request object will
- * not see them.
- *
- * @param int|null              $user_id Null when not authenticated.
- * @param \WP_REST_Request|null $request The request, when available.
- * @return int|null
- *
- * Example:
- *
- *     add_filter( 'mindful_import_authenticate', function ( $user_id, $request ) {
- *         $token = isset( $_SERVER['HTTP_X_MY_TOKEN'] ) ? wp_unslash( $_SERVER['HTTP_X_MY_TOKEN'] ) : null;
- *         return ( $token && my_verify( $token ) ) ? my_service_user_id() : $user_id;
- *     }, 10, 2 );
- */
-
-/**
  * Filter: mindful_import_allowed_routes
  *
  * Adjusts the REST route prefixes an import request may reach. The default list is this
@@ -170,7 +139,7 @@ defined( 'ABSPATH' ) || exit;
  * Example:
  *
  *     add_filter( 'mindful_import_discovery', function ( $discovery ) {
- *         $discovery['resources'][] = 'my-companion/v1/things';
+ *         $discovery['resources'][] = 'my-site/v1/things';
  *         return $discovery;
  *     } );
  */
@@ -178,7 +147,7 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Action: mindful_import_register_resource
  *
- * Fires during `rest_api_init` (priority 20) so companions can register extra routes
+ * Fires during `rest_api_init` (priority 20) so site-side code can register extra routes
  * protected by the same key. Use REST::add_route() to inherit the permission callback.
  *
  * @param string $namespace The REST namespace (mindful-import/v1).

@@ -39,7 +39,7 @@ require_once MINDFUL_IMPORT_DIR . 'includes/class-updater.php';
 require_once MINDFUL_IMPORT_DIR . 'includes/class-plugin.php';
 
 /**
- * Companion plugins use this to detect the core plugin.
+ * Site-side code uses this to detect the plugin and its hook API version.
  *
  * @return array{version:string,hook_api:int}
  */

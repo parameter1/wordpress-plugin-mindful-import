@@ -33,6 +33,6 @@ Namespace `Mindful_Import`, one class per file, static methods, no autoloader (e
 - Hooks (hooks.php documents them; emitted by the owning class):
   filters `mindful_import_post_fields($fields, WP_Post)`, `mindful_import_term_fields($fields, WP_Term)`,
   `mindful_import_user_fields($fields, WP_User)`, `mindful_import_options_allowlist(array $names, array $prefixes)`,
-  `mindful_import_change_entry(?array $entry)`, `mindful_import_authenticate(?int $user_id, WP_REST_Request|null)`,
-  `mindful_import_discovery(array)`, `mindful_import_allowed_routes(string[] $routes)`;
+  `mindful_import_change_entry(?array $entry)`, `mindful_import_discovery(array)`,
+  `mindful_import_allowed_routes(string[] $routes)`;
   action `mindful_import_register_resource(string $namespace)`.

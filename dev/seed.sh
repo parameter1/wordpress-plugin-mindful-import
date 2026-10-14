@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Seeds the local harness (docker compose up -d first). Idempotent: safe to re-run.
 # Writes a fresh import key to dev/.key on every run (the previous key stops working).
-#   SEED_COMPANION=1 dev/seed.sh   also activates examples/companion.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -53,8 +52,6 @@ for slug in $SEED_PLUGINS; do
     wp plugin activate "$slug" >/dev/null 2>&1 || warn "could not activate $slug"
   fi
 done
-
-if [ "${SEED_COMPANION:-0}" = 1 ]; then wp plugin activate mindful-import-example; fi
 
 # ---------- users ----------
 ensure_user() { # login email role first last description

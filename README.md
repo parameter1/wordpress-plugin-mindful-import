@@ -136,18 +136,16 @@ made by the import user itself are not logged. A daily WP-Cron job deletes entri
 
 ## Extending per site
 
-Changes for a single site follow a three-tier rule:
+The plugin is built for sites where we have no administrative access, so it needs nothing installed beside
+it and we never rely on adding code to a customer site. Changes for a single site follow a two-tier rule:
 
 1. **Mapping in base-imports first.** If the data is already in `post_meta_fields`, `term_meta_fields`,
    `users[].meta` or `options`, map it in the importer. Nothing on the site changes.
 2. **Plugin configuration second.** Use an option prefix or allowlist entry, or a post type or taxonomy toggle.
-3. **Companion plugin last.** Use one only for data that has to be computed in PHP, such as ACF/Pods values
-   that need their API or a custom table. Write a small plugin with `Requires Plugins: mindful-import` that
-   hooks the filters below. [`examples/companion/mindful-import-example.php`](examples/companion/mindful-import-example.php)
-   is a working template. Guard it with `function_exists( 'mindful_import' )` and check
-   `mindful_import()['hook_api']`.
 
-Hooks (hook API version 1; `plugin/includes/hooks.php` has full docs and examples):
+The hooks below exist for the rare site where someone with access wants to adjust what the plugin exposes,
+from an mu-plugin or the theme. None of them can authenticate a request: only the key does that.
+`plugin/includes/hooks.php` has full docs and examples (hook API version 1):
 
 | Hook | Type | Signature |
 |---|---|---|
@@ -156,7 +154,6 @@ Hooks (hook API version 1; `plugin/includes/hooks.php` has full docs and example
 | `mindful_import_user_fields` | filter | `( array $fields, WP_User $user ): array` |
 | `mindful_import_options_allowlist` | filter | `( array $names, array $prefixes ): array`. Return names, or `[ $names, $prefixes ]` to change both |
 | `mindful_import_change_entry` | filter | `( ?array $entry ): ?array`. Return null to skip the entry |
-| `mindful_import_authenticate` | filter | `( ?int $user_id, ?WP_REST_Request $request ): ?int` |
 | `mindful_import_discovery` | filter | `( array $discovery ): array` |
 | `mindful_import_allowed_routes` | filter | `( string[] $routes ): string[]`. Route prefixes an import request may reach |
 | `mindful_import_register_resource` | action | `( string $namespace )`. Call `\Mindful_Import\REST::add_route( $path, $args )` to inherit key auth |
@@ -209,8 +206,7 @@ take a few seconds with this set loaded.
 own `capability_type`) and a `news_topic` taxonomy that are deliberately not in REST, a `[mi_test]` shortcode,
 a non-public `secret_internal` type and an `mi_whoami` ajax action. It is a single-file bind mount, so after
 editing it with a tool that replaces the file, run `docker compose up -d --force-recreate wordpress` or the
-container keeps the old inode and every request fails with a missing-include warning. `examples/companion`
-is mounted but inactive. Run `SEED_COMPANION=1 dev/seed.sh` to activate it.
+container keeps the old inode and every request fails with a missing-include warning.
 
 ## License
 
