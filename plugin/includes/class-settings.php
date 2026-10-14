@@ -82,6 +82,7 @@ class Settings {
 			'render_enabled'    => true,
 			'last_seen'         => array(),
 			'import_user_id'    => 0,
+			'installed_version' => '',
 		);
 	}
 

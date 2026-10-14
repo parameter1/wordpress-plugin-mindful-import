@@ -42,6 +42,25 @@ class Plugin {
 		Redirects::init();
 		REST::init();
 		Updater::init();
+
+		if ( did_action( 'plugins_loaded' ) ) {
+			self::maybe_upgrade();
+		} else {
+			add_action( 'plugins_loaded', array( __CLASS__, 'maybe_upgrade' ), 20 );
+		}
+	}
+
+	/**
+	 * Runs once per plugin version, since auto-updates never fire the activation hook: fills in
+	 * new defaults and resets the role's capabilities.
+	 */
+	public static function maybe_upgrade() {
+		if ( MINDFUL_IMPORT_VERSION === (string) Settings::get( 'installed_version', '' ) ) {
+			return;
+		}
+		Settings::ensure_defaults();
+		Auth::ensure_role_and_user();
+		Settings::update( array( 'installed_version' => MINDFUL_IMPORT_VERSION ) );
 	}
 
 	/**
@@ -52,6 +71,7 @@ class Plugin {
 		Auth::ensure_role_and_user();
 		Changelog::install_table();
 		Changelog::schedule_retention();
+		Settings::update( array( 'installed_version' => MINDFUL_IMPORT_VERSION ) );
 	}
 
 	/**

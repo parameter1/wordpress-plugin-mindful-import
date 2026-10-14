@@ -58,7 +58,8 @@ echo "== discovery"
 expect_jq "discovery: plugin.version" "$API/discovery" '.plugin.version | type=="string" and length>0' "$H"
 expect_jq "discovery: news forced show_in_rest" "$API/discovery" '[.post_types[] | select(.name=="news") | .show_in_rest] == [true]' "$H"
 expect_jq "discovery: secret_internal absent" "$API/discovery" '[.post_types[] | select(.name=="secret_internal")] | length == 0' "$H"
-expect_status "secret_internal: no REST route even with key" GET "$BASE/wp-json/wp/v2/secret_internal" 404 "$H"
+expect_status "secret_internal: refused even with key (allowlist 403 precedes core 404)" GET "$BASE/wp-json/wp/v2/secret_internal" 403 "$H"
+expect_status "secret_internal: 404 without key" GET "$BASE/wp-json/wp/v2/secret_internal" 404
 expect_jq "discovery: Redirection listed in plugins" "$API/discovery" '[.plugins[] | select(.name|test("Redirection"))] | length > 0' "$H" $((1-REDIR))
 expect_jq "discovery: changes.head_id is a number" "$API/discovery" '.changes.head_id | type=="number"' "$H"
 
@@ -77,11 +78,33 @@ expect_jq "posts: mi_multi has 2 values" "$P" '.[0].post_meta_fields.mi_multi | 
 expect_status "posts: drafts 200 (context=edit)" GET "$WPV2/posts?status=draft&context=edit" 200 "$H"
 expect_jq "posts: drafts listed" "$WPV2/posts?status=draft&context=edit" 'length >= 1' "$H"
 expect_jq "posts: scheduled listed" "$WPV2/posts?status=future&context=edit" '[.[] | select(.title.rendered|test("Scheduled"))] | length >= 1' "$H"
+expect_status "posts: drafts 200 via ?rest_route= (context=edit)" GET "$BASE/?rest_route=/wp/v2/posts&status=draft&context=edit" 200 "$H"
+expect_status "news: context=edit 200 (own capability_type granted per request)" GET "$WPV2/news?context=edit" 200 "$H"
+expect_jq "posts: _embed author resolves (wp/v2/users stays reachable)" "$P&_embed=author" '.[0]._embedded.author[0].id | type=="number"' "$H"
 
 PUB=$(get "$P" "$H" | jq -r '.[0].id // empty')
 echo "== read-only (published post id: ${PUB:-?})"
 expect_status "POST posts with key: 403" POST "$WPV2/posts" 403 "$H" -H 'Content-Type: application/json' --data '{"title":"x"}'
 expect_status "DELETE post with key: 403" DELETE "$WPV2/posts/${PUB:-1}" 403 "$H"
+expect_status "GET with _method=POST: 403" GET "$WPV2/posts?_method=POST" 403 "$H"
+expect_status "GET with X-HTTP-Method-Override: POST: 403" GET "$WPV2/posts" 403 "$H" -H 'X-HTTP-Method-Override: POST'
+expect_status "POST disguised as GET gets no edit caps (context=edit): 403" POST "$WPV2/posts?_method=GET&context=edit" 403 "$H"
+ROLE_CAPS=$(wpv cap list mindful_import --format=json)
+if [ "$ROLE_CAPS" = '[{"name":"read"}]' ]; then pass "role mindful_import stores only read"; else fail "role mindful_import stores only read" "$ROLE_CAPS"; fi
+
+echo "== route allowlist"
+expect_status "oembed proxy with key: 403" GET "$BASE/wp-json/oembed/1.0/proxy?url=https://example.com/" 403 "$H"
+expect_status "block-renderer core/rss with key: 403" GET "$WPV2/block-renderer/core/rss?context=edit" 403 "$H"
+expect_status "wp/v2/settings with key: 403" GET "$WPV2/settings" 403 "$H"
+expect_status "wp/v2/plugins with key: 403" GET "$WPV2/plugins" 403 "$H"
+expect_jq "denied route reports mindful_import_route_denied" "$WPV2/settings" '.code == "mindful_import_route_denied"' "$H"
+expect_status "REST index with key: 200" GET "$BASE/wp-json/" 200 "$H"
+expect_status "wp/v2/media with key: 200" GET "$WPV2/media" 200 "$H"
+
+echo "== key ignored outside REST"
+AJAX=$(curl -s -X POST -H "$H" "$BASE/wp-admin/admin-ajax.php?rest_route=/wp/v2/posts&action=mi_whoami")
+if printf '%s' "$AJAX" | jq -e '.user == 0 and .edit_posts == false' >/dev/null 2>&1; then pass "admin-ajax with key + rest_route runs anonymously"
+else fail "admin-ajax with key + rest_route runs anonymously" "$(printf '%s' "$AJAX" | head -c 200)"; fi
 
 echo "== rendering"
 expect_jq "posts: mindful_rendered_content runs shortcodes" "$P&mindful_render=1" \

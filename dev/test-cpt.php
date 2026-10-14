@@ -12,14 +12,17 @@ if ( ! defined( 'ABSPATH' ) ) {
 add_action(
 	'init',
 	function () {
+		// Own capability_type (edit_news_items etc.), so the plugin's per-request capability grant is exercised.
 		register_post_type(
 			'news',
 			array(
-				'label'        => 'News',
-				'public'       => true,
-				'show_in_rest' => false,
-				'has_archive'  => true,
-				'supports'     => array( 'title', 'editor', 'excerpt', 'thumbnail', 'custom-fields', 'author' ),
+				'label'           => 'News',
+				'public'          => true,
+				'show_in_rest'    => false,
+				'has_archive'     => true,
+				'capability_type' => array( 'news_item', 'news_items' ),
+				'map_meta_cap'    => true,
+				'supports'        => array( 'title', 'editor', 'excerpt', 'thumbnail', 'custom-fields', 'author' ),
 			)
 		);
 
@@ -52,3 +55,15 @@ add_action(
 		);
 	}
 );
+
+// Reports who an admin-ajax request runs as, so the smoke test can prove the key is ignored there.
+function mi_test_whoami() {
+	wp_send_json(
+		array(
+			'user'       => get_current_user_id(),
+			'edit_posts' => current_user_can( 'edit_posts' ),
+		)
+	);
+}
+add_action( 'wp_ajax_nopriv_mi_whoami', 'mi_test_whoami' );
+add_action( 'wp_ajax_mi_whoami', 'mi_test_whoami' );

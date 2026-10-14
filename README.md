@@ -58,10 +58,23 @@ These fields are registered only on key-authenticated requests. Anonymous respon
 
 ### Read-only guarantee
 
-Any request authenticated by the key that is not GET/HEAD/OPTIONS is rejected with **403**. That includes
-core routes such as `POST /wp/v2/posts` and `DELETE /wp/v2/posts/<id>`. The dedicated role has edit
-capabilities only so that core REST will return `context=edit` and non-published statuses. The 403 gate is
-what enforces read-only.
+Three layers, all applied to key-authenticated requests:
+
+- **The key only works on REST.** It is honoured on requests core serves through the REST API and nowhere
+  else: not on admin screens, `admin-ajax.php`, `admin-post.php`, `wp-login.php`, cron or XML-RPC, whatever
+  the query string says. A key sent there is ignored and the request stays anonymous.
+- **Writes are refused.** Any request that is not GET/HEAD/OPTIONS, after core's `_method` and
+  `X-HTTP-Method-Override` overrides are applied, is rejected with **403**. That includes core routes such as
+  `POST /wp/v2/posts` and `DELETE /wp/v2/posts/<id>`.
+- **Only content routes are reachable.** GET is allowed on the REST index, `mindful-import/v1/*`, every
+  REST-visible post type and taxonomy, and `wp/v2/{users,comments,types,taxonomies,statuses,search}`. Anything
+  else answers **403** (`mindful_import_route_denied`), which keeps the oembed proxy, the block renderer, the
+  block and pattern directories, plugins, themes, settings, site health and batch out of reach even though
+  they answer GET. Companions extend the list with `mindful_import_allowed_routes`.
+
+The role itself holds only `read`. Core REST needs edit-level capabilities to return `context=edit` and
+non-published statuses, so those are granted to the import user for the duration of a GET REST request
+only, through `user_has_cap`, and are never stored. Outside such a request the account is a subscriber.
 
 ### Change log
 
@@ -88,34 +101,35 @@ made by the import user itself are not logged. A daily WP-Cron job deletes entri
 - **Key hashing.** Only `sha256(salt + key)` and the salt are stored, and comparison uses `hash_equals`. The
   plaintext appears once, at generation. Neither `settings` nor `discovery` ever returns the hash or the salt.
 - **Dedicated role and user.** Key requests run as a dedicated `mindful-import` user with the `mindful_import`
-  role. The role has read and edit capabilities plus `list_users`, and no `manage_options`, `delete_*`,
-  `publish_*` or plugin and theme capabilities. The user's password is 64 random characters generated at
+  role, which holds `read` and nothing else. The user's password is 64 random characters generated at
   creation and never shown to anyone, not even Parameter1. The account cannot log in interactively and
   cannot hold application passwords. The only secret that leaves the site is the import key.
-- **Why the role carries `edit_*` capabilities.** The plugin's own routes need no capabilities at all. The
-  edit capabilities exist only for core `wp/v2` routes, because WordPress has no "read unpublished content"
-  capability and uses edit permissions as the proxy for it:
+- **Why the request-time grant includes `edit_*` capabilities.** The plugin's own routes need no
+  capabilities at all. The edit capabilities exist only for core `wp/v2` routes, because WordPress has no
+  "read unpublished content" capability and uses edit permissions as the proxy for it:
   - `edit_posts` / `edit_pages`: listing `?status=draft`, `pending`, `future` or `trash`
     (`sanitize_post_statuses`), and `context=edit`, which returns the raw body and registered `meta`.
   - `edit_others_posts`, `edit_published_posts`, `edit_private_posts` and the page equivalents: reading a
     single unpublished item. Core maps `read_post` on a draft to `edit_post`, which needs `edit_others_posts`
     for items the import user did not write.
-  - `manage_categories`: `context=edit` on terms. `upload_files`: `context=edit` on attachments.
-    `list_users`: `/wp/v2/users?context=edit` (emails, roles, usernames).
+  - `manage_categories`: `context=edit` on terms. `list_users`: `/wp/v2/users?context=edit`. Media reads,
+    including `context=edit`, need only `edit_posts`; `upload_files` is checked for uploads and edits alone,
+    so it is never granted.
   - `read`, `read_private_posts`, `read_private_pages` are the only purely read capabilities and cover
     published and private content only.
-  These capabilities are inert in practice: every key-authenticated request that is not GET/HEAD/OPTIONS is
-  refused with 403 before dispatch, the key is honoured on REST URIs only (never `wp-admin` or
-  `admin-ajax`), and the account cannot log in. Removing the edit capabilities would drop drafts, scheduled,
-  pending and trashed content and `context=edit` from the import; the change log would still report
-  scheduled posts when they publish. If a site requires a stored role with no edit capabilities, that is
-  the trade-off. Decision 2026-10-13: keep the capabilities and rely on the 403 gate.
+  Rather than store these on the role, where any code path that runs as the account could use them, the
+  plugin grants them through `user_has_cap` only while a GET/HEAD/OPTIONS REST request is being served, and
+  adds the equivalents for every REST-visible type and taxonomy with its own `capability_type`. The user
+  never gets `manage_options`, `edit_theme_options`, `upload_files`, `delete_*`, `publish_*` or plugin and
+  theme capabilities, whatever a post type maps its own capabilities to. This supersedes the 2026-10-13
+  decision to keep the capabilities on the role: that rested on the key being ignored on `admin-ajax`,
+  which was not the case until the request-context check below was tightened.
 - **Options deny-list.** Options matched by a prefix are dropped (and counted in `denied_count`) when their
   name contains `key`, `secret`, `token`, `password`, `passwd`, `salt`, `smtp`, `auth`, `private` or `license`.
   Exact allowlist entries are an explicit admin choice and bypass the deny-list.
 - **User meta filtering.** Passwords, session tokens, capabilities, user level, any key, token or secret
   values, and admin UI preferences are never returned.
-- **403 on writes.** See the read-only guarantee above.
+- **403 on writes and on non-content routes.** See the read-only guarantee above.
 - **Uninstall** removes the option, the change-log table, the role and the import user.
 
 ## Extending per site
@@ -142,6 +156,7 @@ Hooks (hook API version 1; `plugin/includes/hooks.php` has full docs and example
 | `mindful_import_change_entry` | filter | `( ?array $entry ): ?array`. Return null to skip the entry |
 | `mindful_import_authenticate` | filter | `( ?int $user_id, ?WP_REST_Request $request ): ?int` |
 | `mindful_import_discovery` | filter | `( array $discovery ): array` |
+| `mindful_import_allowed_routes` | filter | `( string[] $routes ): string[]`. Route prefixes an import request may reach |
 | `mindful_import_register_resource` | action | `( string $namespace )`. Call `\Mindful_Import\REST::add_route( $path, $args )` to inherit key auth |
 
 ## Updates
@@ -178,10 +193,12 @@ docker run --rm -v "$PWD/plugin:/p" php:7.4-cli sh -c 'for f in $(find /p -name 
 docker compose down -v        # wipe everything
 ```
 
-`dev/test-cpt.php` is mounted as a must-use plugin on the dev site only. It registers a `news` CPT and a
-`news_topic` taxonomy that are deliberately not in REST, a `[mi_test]` shortcode and a non-public
-`secret_internal` type. `examples/companion` is mounted but inactive. Run `SEED_COMPANION=1 dev/seed.sh` to
-activate it.
+`dev/test-cpt.php` is mounted as a must-use plugin on the dev site only. It registers a `news` CPT (with its
+own `capability_type`) and a `news_topic` taxonomy that are deliberately not in REST, a `[mi_test]` shortcode,
+a non-public `secret_internal` type and an `mi_whoami` ajax action. It is a single-file bind mount, so after
+editing it with a tool that replaces the file, run `docker compose up -d --force-recreate wordpress` or the
+container keeps the old inode and every request fails with a missing-include warning. `examples/companion`
+is mounted but inactive. Run `SEED_COMPANION=1 dev/seed.sh` to activate it.
 
 ## License
 
