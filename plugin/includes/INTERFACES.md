@@ -10,9 +10,9 @@ Namespace `Mindful_Import`, one class per file, static methods, no autoloader (e
 - `Settings::get( string $key, $default = null )` reads from the single option `mindful_import` (array).
   Keys: `key_hash`, `key_salt`, `key_created_at`, `post_types` (array name=>bool, missing = enabled),
   `taxonomies` (same), `options_allowlist` (array of names), `options_prefixes` (array), `retention_days` (int, 90),
-  `render_enabled` (bool, true), `last_seen` (array{at:int, ip:string}), `installed_version` (string; drives
-  `Plugin::maybe_upgrade()`).
-  `Settings::update( array $partial )`, `Settings::ensure_defaults()`, `Settings::defaults()`.
+  `render_enabled` (bool, true), `installed_version` (string; drives `Plugin::maybe_upgrade()`).
+  `Settings::update( array $partial )`, `Settings::delete( string $key )`, `Settings::ensure_defaults()`,
+  `Settings::defaults()`.
 - `Auth::is_import_request( ?WP_REST_Request $request = null ): bool` — true when the current request carried a
   valid key (memoised per request). The key is honoured only on requests core serves through the REST API.
   `Auth::permission_callback( WP_REST_Request $r )` → true|WP_Error(401).

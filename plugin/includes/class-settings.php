@@ -80,7 +80,6 @@ class Settings {
 			'options_prefixes'  => array( 'wpseo_', 'aioseo_' ),
 			'retention_days'    => 90,
 			'render_enabled'    => true,
-			'last_seen'         => array(),
 			'import_user_id'    => 0,
 			'installed_version' => '',
 		);
@@ -123,6 +122,21 @@ class Settings {
 	 */
 	public static function update( array $partial ) {
 		$all = array_merge( self::all(), $partial );
+		return update_option( MINDFUL_IMPORT_OPTION, $all );
+	}
+
+	/**
+	 * Removes one key from the stored option (no-op when absent).
+	 *
+	 * @param string $key Setting key.
+	 * @return bool
+	 */
+	public static function delete( $key ) {
+		$all = self::all();
+		if ( ! array_key_exists( $key, $all ) ) {
+			return false;
+		}
+		unset( $all[ $key ] );
 		return update_option( MINDFUL_IMPORT_OPTION, $all );
 	}
 
@@ -261,7 +275,6 @@ class Settings {
 		$tax_flags    = (array) self::get( 'taxonomies', array() );
 		$created_at   = (int) self::get( 'key_created_at', 0 );
 		$has_key      = '' !== (string) self::get( 'key_hash', '' );
-		$last_seen    = (array) self::get( 'last_seen', array() );
 		$user_id      = Auth::import_user_id();
 		$discovery    = rest_url( MINDFUL_IMPORT_REST_NAMESPACE . '/discovery' );
 		$date_format  = get_option( 'date_format' ) . ' ' . get_option( 'time_format' );
@@ -318,19 +331,6 @@ class Settings {
 						<?php else : ?>
 							<?php esc_html_e( 'Missing. Deactivate and reactivate the plugin to recreate it.', 'mindful-import' ); ?>
 						<?php endif; ?>
-					</td>
-				</tr>
-				<tr>
-					<th scope="row"><?php esc_html_e( 'Last request seen', 'mindful-import' ); ?></th>
-					<td>
-						<?php
-						if ( ! empty( $last_seen['at'] ) ) {
-							/* translators: 1: date, 2: IP address. */
-							echo esc_html( sprintf( __( '%1$s from %2$s', 'mindful-import' ), wp_date( $date_format, (int) $last_seen['at'] ), isset( $last_seen['ip'] ) ? $last_seen['ip'] : '' ) );
-						} else {
-							esc_html_e( 'Never.', 'mindful-import' );
-						}
-						?>
 					</td>
 				</tr>
 				<tr>

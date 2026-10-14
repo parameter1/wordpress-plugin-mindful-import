@@ -29,7 +29,7 @@ Generating a new key revokes the old one straight away.
 |---|---|---|
 | `discovery` | none | `{plugin:{version,hook_api}, wordpress, post_types:[{name,label,public,show_in_rest,rest_base,hierarchical,taxonomies,count}], taxonomies, plugins:[{file,name,version}], theme, settings, changes:{head_id}, …}`: everything needed to plan a run |
 | `options` | `names` (comma list, narrows the result) | `{options:[{key,value}], denied_count}` |
-| `settings` | none | Plugin settings without secrets: `{post_types, taxonomies, options_allowlist, options_prefixes, retention_days, render_enabled, key_created_at, last_seen, version, …}` |
+| `settings` | none | Plugin settings without secrets: `{post_types, taxonomies, options_allowlist, options_prefixes, retention_days, render_enabled, key_created_at, version, …}` |
 | `users` | `page` (1), `per_page` (100, max 500) | `[{id,login,email,display_name,nicename,url,registered,roles,first_name,last_name,nickname,description,avatar_url,meta}]`. Includes users with no posts. Sends `X-WP-Total` / `X-WP-TotalPages` |
 | `changes` | `after` (id, 0), `limit` (100, max 500), `object_type` (`post`/`attachment`/`term`/`user`), `since` (ISO 8601) | `{changes:[{id,object_type,object_id,post_type,taxonomy,action,old_status,new_status,changed_at,user_id}], head_id, has_more, next_after}` |
 | `changes/latest` | none | `{head_id, latest, …}` |
@@ -88,7 +88,7 @@ made by the import user itself are not logged. A daily WP-Cron job deletes entri
 
 | Setting | Default | Effect |
 |---|---|---|
-| Key | none | Generate (or rotate) the import key. Shows when the key was created and when and from where it was last used |
+| Key | none | Generate (or rotate) the import key. Shows when the key was created |
 | Post types | all public enabled | Untick a type to keep it out of forced REST exposure (which only key requests get) and the meta fields |
 | Taxonomies | all public enabled | Same as post types, for taxonomies |
 | Options allowlist | site basics (`blogname`, `home`, `timezone_string`, `permalink_structure`, …) | Exact option names returned by `options` |

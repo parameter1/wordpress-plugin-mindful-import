@@ -166,6 +166,12 @@ expect_jq "redirects: /old-path/ is 301" "$API/redirects" '[.redirects[] | selec
 echo "== settings"
 expect_jq "settings: key_created_at is a number" "$API/settings" '.key_created_at | type=="number"' "$H"
 expect_jq "settings: no key_hash/key_salt" "$API/settings" '[.. | objects | keys[]] | map(select(.=="key_hash" or .=="key_salt")) | length == 0' "$H"
+expect_jq "settings: no last_seen" "$API/settings" 'has("last_seen") | not' "$H"
+# Plant the pre-release key and forget the installed version; the next load runs Plugin::maybe_upgrade().
+wp option patch insert mindful_import last_seen stale >/dev/null 2>&1
+wp option patch delete mindful_import installed_version >/dev/null 2>&1
+if [ "$(wpv eval 'echo array_key_exists("last_seen", (array) get_option("mindful_import")) ? "present" : "gone";')" = "gone" ]; then pass "option: stale last_seen key removed by upgrade"
+else fail "option: stale last_seen key removed by upgrade"; fi
 
 echo "== key rotation"
 NEWKEY=$(wpv eval 'echo Mindful_Import\Auth::generate_key();')

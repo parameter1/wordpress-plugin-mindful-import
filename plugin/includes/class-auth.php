@@ -160,10 +160,6 @@ class Auth {
 
 		self::$user_id   = $user_id;
 		self::$resolving = false;
-
-		if ( $user_id ) {
-			self::record_last_seen();
-		}
 	}
 
 	/**
@@ -433,29 +429,6 @@ class Auth {
 			return false;
 		}
 		return hash_equals( $hash, hash( 'sha256', $salt . (string) $plain ) );
-	}
-
-	/**
-	 * Stores last_seen at most once per 60 seconds.
-	 */
-	private static function record_last_seen() {
-		$last = Settings::get( 'last_seen', array() );
-		$now  = time();
-		if ( is_array( $last ) && ! empty( $last['at'] ) && ( $now - (int) $last['at'] ) < 60 ) {
-			return;
-		}
-		$ip = isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '';
-		if ( '' !== $ip && false === filter_var( $ip, FILTER_VALIDATE_IP ) ) {
-			$ip = '';
-		}
-		Settings::update(
-			array(
-				'last_seen' => array(
-					'at' => $now,
-					'ip' => $ip,
-				),
-			)
-		);
 	}
 
 	/**

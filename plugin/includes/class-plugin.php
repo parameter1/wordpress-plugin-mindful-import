@@ -60,6 +60,7 @@ class Plugin {
 		}
 		Settings::ensure_defaults();
 		Auth::ensure_role_and_user();
+		Settings::delete( 'last_seen' ); // Pre-release versions recorded the last key use here.
 		Settings::update( array( 'installed_version' => MINDFUL_IMPORT_VERSION ) );
 	}
 

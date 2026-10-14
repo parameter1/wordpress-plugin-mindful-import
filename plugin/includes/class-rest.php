@@ -398,7 +398,6 @@ class REST {
 				'retention_days'    => (int) Settings::get( 'retention_days', 90 ),
 				'render_enabled'    => (bool) Settings::get( 'render_enabled', true ),
 				'key_created_at'    => Settings::get( 'key_created_at' ),
-				'last_seen'         => Settings::get( 'last_seen' ),
 				'import_user_id'    => (int) Auth::import_user_id(),
 				'version'           => MINDFUL_IMPORT_VERSION,
 				'hook_api'          => MINDFUL_IMPORT_HOOK_API,
