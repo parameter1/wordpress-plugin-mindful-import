@@ -187,13 +187,23 @@ Requires Docker, `curl` and `jq`.
 
 ```sh
 docker compose up -d          # WordPress on http://localhost:8089 + MySQL 8 (project: mindful-import-dev)
-dev/seed.sh                   # install, activate, seed fixtures, write a key to dev/.key (admin / admin)
+dev/seed.sh                   # install, activate, seed fixtures + live-like plugins, write a key to dev/.key (admin / admin)
 dev/smoke.sh                  # end-to-end assertions; prints "SMOKE: N passed, M failed"; rotates the key
 scripts/build-zip.sh          # dist/mindful-import-<version>.zip
 docker compose --profile tools run --rm cli plugin list     # wp-cli
 docker run --rm -v "$PWD/plugin:/p" php:7.4-cli sh -c 'for f in $(find /p -name "*.php" -not -path "*/vendor/*"); do php -l "$f"; done'
 docker compose down -v        # wipe everything
 ```
+
+The seed also installs the neighbours a real site has, so every assertion runs alongside them: Wordfence,
+Yoast SEO, All in One SEO, Advanced Custom Fields, WooCommerce, Elementor, Classic Editor, WP Super Cache,
+Limit Login Attempts Reloaded and Disable REST API, plus Redirection. Override the list with
+`SEED_PLUGINS="wordfence wordpress-seo" dev/seed.sh` (an empty value installs none). The smoke suite warns
+rather than fails when one is missing, and it adds plugin-specific checks (Yoast and AIOSEO options through
+the default prefixes, a WooCommerce product through forced REST, `wc/v3` refused by the route allowlist,
+Disable REST API blocking anonymous calls while key calls still pass). Plugin notices go to
+`wp-content/debug.log` inside the container, never into responses. Expect each request and each wp-cli call to
+take a few seconds with this set loaded.
 
 `dev/test-cpt.php` is mounted as a must-use plugin on the dev site only. It registers a `news` CPT (with its
 own `capability_type`) and a `news_topic` taxonomy that are deliberately not in REST, a `[mi_test]` shortcode,

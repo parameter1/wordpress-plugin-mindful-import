@@ -39,6 +39,21 @@ else
   warn "Redirection install failed (offline?); redirect checks will be warn-only"
 fi
 
+# ---------- live-like plugins ----------
+# The neighbours a real site has: a WAF, both SEO plugins behind the default option prefixes, ACF,
+# WooCommerce, Elementor, a page cache, login limiting and a REST lockdown plugin. Override with
+# SEED_PLUGINS="slug slug" (SEED_PLUGINS="" installs none). Each is a WARN, not a failure, when offline.
+SEED_PLUGINS=${SEED_PLUGINS-wordfence wordpress-seo all-in-one-seo-pack advanced-custom-fields woocommerce elementor classic-editor wp-super-cache limit-login-attempts-reloaded disable-json-api}
+log "Live-like plugins"
+for slug in $SEED_PLUGINS; do
+  if ! wp plugin is-installed "$slug" >/dev/null 2>&1; then
+    wp plugin install "$slug" >/dev/null 2>&1 || { warn "install failed: $slug (offline?)"; continue; }
+  fi
+  if ! wp plugin is-active "$slug" >/dev/null 2>&1; then
+    wp plugin activate "$slug" >/dev/null 2>&1 || warn "could not activate $slug"
+  fi
+done
+
 if [ "${SEED_COMPANION:-0}" = 1 ]; then wp plugin activate mindful-import-example; fi
 
 # ---------- users ----------
@@ -98,6 +113,19 @@ for title in "News One" "News Two"; do
   wp post term set "$NID" news_topic "$ROBOTICS" --by=id >/dev/null
   wp post meta update "$NID" mi_source wire >/dev/null
 done
+
+# ---------- live-like plugin data ----------
+log "Plugin data"
+if wp plugin is-active wordpress-seo >/dev/null 2>&1; then
+  # A legitimate Yoast profile key the old substring deny-list dropped, plus a title override.
+  wp user meta update jane wpseo_keyword_analysis_disable on >/dev/null
+  wp user meta update jane wpseo_title "Jane Doe | Robotics" >/dev/null
+fi
+if wp plugin is-active woocommerce >/dev/null 2>&1; then
+  WIDGET=$(ensure_post product "Harness Widget" publish --post_content='A product.')
+  wp post meta update "$WIDGET" _price 9.99 >/dev/null
+  wp user meta update nobody billing_email nobody@example.com >/dev/null
+fi
 
 # ---------- media ----------
 log "Media"

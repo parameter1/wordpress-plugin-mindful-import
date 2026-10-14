@@ -51,8 +51,10 @@ for r in discovery options settings users changes changes/latest redirects; do
   expect_status "$r: 401 with wrong key" GET "$API/$r" 401 "$BAD"
 done
 
-REDIR=0
-wp plugin is-active redirection >/dev/null 2>&1 && REDIR=1
+active() { wp plugin is-active "$1" >/dev/null 2>&1; }
+REDIR=0; active redirection && REDIR=1
+# "Disable REST API" answers 401 to anonymous requests for routes that exist (missing routes still 404).
+ANON_BLOCKED=0; active disable-json-api && ANON_BLOCKED=1
 
 echo "== discovery"
 expect_jq "discovery: plugin.version" "$API/discovery" '.plugin.version | type=="string" and length>0' "$H"
@@ -71,7 +73,8 @@ expect_status "news_topic: 404 without key" GET "$WPV2/news_topic" 404
 if [ "$(wpv eval 'echo get_post_type_object("news")->show_in_rest ? "yes" : "no";')" = "no" ]; then pass "news: show_in_rest stays false outside a key request"
 else fail "news: show_in_rest stays false outside a key request"; fi
 P="$WPV2/posts?search=Published"
-expect_jq "posts: no post_meta_fields key at all without key" "$P" '.[0] | has("post_meta_fields") | not'
+if [ "$ANON_BLOCKED" = 1 ]; then expect_status "posts: anonymous 401 (Disable REST API active)" GET "$P" 401
+else expect_jq "posts: no post_meta_fields key at all without key" "$P" '.[0] | has("post_meta_fields") | not'; fi
 expect_jq "posts: dotted key flattened to mi__dotted" "$P" '.[0].post_meta_fields.mi__dotted == "dotval"' "$H"
 expect_jq "posts: _yoast_wpseo_title" "$P" '.[0].post_meta_fields._yoast_wpseo_title == "Custom SEO Title"' "$H"
 expect_jq "posts: mi_multi has 2 values" "$P" '.[0].post_meta_fields.mi_multi | length == 2' "$H"
@@ -89,8 +92,10 @@ expect_status "DELETE post with key: 403" DELETE "$WPV2/posts/${PUB:-1}" 403 "$H
 expect_status "GET with _method=POST: 403" GET "$WPV2/posts?_method=POST" 403 "$H"
 expect_status "GET with X-HTTP-Method-Override: POST: 403" GET "$WPV2/posts" 403 "$H" -H 'X-HTTP-Method-Override: POST'
 expect_status "POST disguised as GET gets no edit caps (context=edit): 403" POST "$WPV2/posts?_method=GET&context=edit" 403 "$H"
+# Third-party plugins add their own caps to every role (Wordfence: wfls_*, wf2fa_*), so assert shape, not equality.
 ROLE_CAPS=$(wpv cap list mindful_import --format=json)
-if [ "$ROLE_CAPS" = '[{"name":"read"}]' ]; then pass "role mindful_import stores only read"; else fail "role mindful_import stores only read" "$ROLE_CAPS"; fi
+if printf '%s' "$ROLE_CAPS" | jq -e '([.[].name] | index("read") != null) and ([.[].name | select(test("^(edit_|delete_|publish_|upload_|create_|manage_|list_users|install_|update_|activate_|switch_|unfiltered_|import|export)"))] | length == 0)' >/dev/null 2>&1; then pass "role mindful_import stores read and no write-shaped caps"
+else fail "role mindful_import stores read and no write-shaped caps" "$ROLE_CAPS"; fi
 
 echo "== route allowlist"
 expect_status "oembed proxy with key: 403" GET "$BASE/wp-json/oembed/1.0/proxy?url=https://example.com/" 403 "$H"
@@ -162,6 +167,41 @@ fi
 echo "== redirects"
 expect_jq "redirects: providers has redirection" "$API/redirects" '.providers | index("redirection") != null' "$H" $((1-REDIR))
 expect_jq "redirects: /old-path/ is 301" "$API/redirects" '[.redirects[] | select(.source=="/old-path/") | (.code|tonumber)] == [301]' "$H" $((1-REDIR))
+
+echo "== live-like plugins (dev/seed.sh SEED_PLUGINS)"
+for p in wordfence wordpress-seo all-in-one-seo-pack advanced-custom-fields woocommerce elementor classic-editor wp-super-cache limit-login-attempts-reloaded disable-json-api; do
+  if active "$p"; then pass "$p: active"; else warn "$p: not active"; fi
+done
+if active wordfence; then
+  expect_status "wordfence: key request passes the WAF" GET "$API/discovery" 200 "$H"
+  expect_jq "wordfence: wp/v2/users still embeds authors with key" "$P&_embed=author" '.[0]._embedded.author[0].id | type=="number"' "$H"
+fi
+if active wordpress-seo; then
+  expect_jq "yoast: wpseo_titles exposed via prefix" "$API/options" '[.options[] | select(.key=="wpseo_titles")] | length == 1' "$H"
+  expect_jq "yoast: wpseo_keyword_analysis_disable user meta kept" "$API/users" '[.[] | select(.login=="jane") | .meta.wpseo_keyword_analysis_disable] == ["on"]' "$H"
+  expect_jq "yoast: yoast_head_json flows through on posts" "$P" '.[0] | has("yoast_head_json")' "$H" 1
+fi
+if active all-in-one-seo-pack; then
+  expect_jq "aioseo: aioseo_options exposed via prefix" "$API/options" '[.options[] | select(.key=="aioseo_options")] | length == 1' "$H"
+  # Review #4 is unfixed: nested option blobs come back whole. WARN when credential-looking nested keys appear.
+  expect_jq "aioseo: no credential-looking keys inside option blobs (review #4)" "$API/options" \
+    '[.options[] | select(.key|startswith("aioseo_")) | .value | (if type=="string" then (try fromjson catch {}) else . end) | .. | objects | keys[] | select(test("key|secret|token|license|password";"i"))] | length == 0' "$H" 1
+fi
+if active advanced-custom-fields; then
+  expect_jq "acf: acf-field-group absent from discovery" "$API/discovery" '[.post_types[] | select(.name=="acf-field-group")] | length == 0' "$H"
+fi
+if active woocommerce; then
+  PRODUCT_BASE=$(get "$API/discovery" "$H" | jq -r '.post_types[] | select(.name=="product") | .rest_base // empty')
+  expect_jq "woocommerce: product in discovery" "$API/discovery" '[.post_types[] | select(.name=="product")] | length == 1' "$H"
+  expect_jq "woocommerce: shop_order absent from discovery" "$API/discovery" '[.post_types[] | select(.name=="shop_order")] | length == 0' "$H"
+  expect_status "woocommerce: GET /wp/v2/${PRODUCT_BASE:-product} 200 with key" GET "$WPV2/${PRODUCT_BASE:-product}" 200 "$H"
+  expect_jq "woocommerce: Harness Widget carries post_meta_fields._price" "$WPV2/${PRODUCT_BASE:-product}?search=Harness" '[.[] | select(.title.rendered=="Harness Widget") | .post_meta_fields._price] == ["9.99"]' "$H"
+  expect_status "woocommerce: wc/v3/products 403 with key (route allowlist)" GET "$BASE/wp-json/wc/v3/products" 403 "$H"
+fi
+if [ "$ANON_BLOCKED" = 1 ]; then
+  expect_status "disable-json-api: anonymous wp/v2/posts 401" GET "$WPV2/posts" 401
+  expect_status "disable-json-api: key request still 200" GET "$WPV2/posts" 200 "$H"
+fi
 
 echo "== settings"
 expect_jq "settings: key_created_at is a number" "$API/settings" '.key_created_at | type=="number"' "$H"
