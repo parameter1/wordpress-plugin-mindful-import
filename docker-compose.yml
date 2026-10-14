@@ -12,7 +12,7 @@ x-wp-env: &wp-env
     define('WP_HOME', 'http://localhost:8089');
     define('WP_SITEURL', 'http://localhost:8089');
     define('DISABLE_WP_CRON', false);
-    // Notices from the live-like plugin set go to wp-content/debug.log, not into JSON responses.
+    // Plugin notices go to wp-content/debug.log, never into JSON responses (where they would also break status codes).
     define('WP_DEBUG_DISPLAY', false);
     define('WP_DEBUG_LOG', true);
     define('WP_MEMORY_LIMIT', '256M');
