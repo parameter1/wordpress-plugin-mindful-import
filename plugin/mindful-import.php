@@ -3,7 +3,7 @@
  * Plugin Name: Mindful Import
  * Plugin URI: https://github.com/parameter1/wordpress-plugin-mindful-import
  * Description: Exposes the data a Mindful CMS import needs (post meta on every post type, a change log, users, term meta, allowlisted options and redirect rules) behind a key sent on the X-Mindful-Import-Key header. Read-only.
- * Version: 0.1.0
+ * Version: 0.1.1
  * Requires at least: 6.0
  * Requires PHP: 7.4
  * Author: Parameter1
@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'MINDFUL_IMPORT_VERSION', '0.1.0' );
+define( 'MINDFUL_IMPORT_VERSION', '0.1.1' );
 define( 'MINDFUL_IMPORT_HOOK_API', 1 );
 define( 'MINDFUL_IMPORT_FILE', __FILE__ );
 define( 'MINDFUL_IMPORT_DIR', plugin_dir_path( __FILE__ ) );
