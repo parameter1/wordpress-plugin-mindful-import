@@ -24,11 +24,10 @@ class Fields {
 	}
 
 	/**
-	 * Registers the fields on every REST-visible post type and taxonomy.
+	 * Registers the fields on every REST-visible post type and taxonomy, on import requests only.
+	 * Anonymous responses are exactly what core produces: no extra keys, not even null ones.
 	 */
 	public static function register_fields() {
-		// Only key-authenticated requests get the extra fields; anonymous responses stay unchanged
-		// (no `post_meta_fields: null` key). The callbacks re-check the key as well.
 		if ( ! Auth::is_import_request() ) {
 			return;
 		}

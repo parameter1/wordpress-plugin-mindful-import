@@ -46,7 +46,10 @@ These fields are registered only on key-authenticated requests. Anonymous respon
 - `mindful_rendered_content` on non-attachment post types when the request adds `?mindful_render=1`. This is
   `the_content` with shortcodes and blocks rendered. It can be turned off in settings.
 - Public post types and taxonomies registered without `show_in_rest` are put into REST (`rest_base` = name),
-  so a CPT the theme hid from REST can still be imported. Non-public types stay out.
+  so a CPT the theme hid from REST can still be imported. This happens only on key-authenticated requests:
+  anonymous visitors still get a 404 for such a type, and the admin (including the classic-versus-block
+  editor choice, which core derives from `show_in_rest`) sees the type exactly as the site registered it.
+  Non-public types stay out.
 - The import user can read drafts, scheduled and private content (`?status=draft&context=edit`). Two core limits
   to know: WordPress protects the Privacy Policy page (and the front/posts pages) behind `manage_options`, so a
   draft of those is not returned even though `X-WP-Total` counts it; and `wp/v2/users?context=edit` returns only
@@ -73,7 +76,7 @@ made by the import user itself are not logged. A daily WP-Cron job deletes entri
 | Setting | Default | Effect |
 |---|---|---|
 | Key | none | Generate (or rotate) the import key. Shows when the key was created and when and from where it was last used |
-| Post types | all public enabled | Untick a type to keep it out of forced REST exposure and the meta fields |
+| Post types | all public enabled | Untick a type to keep it out of forced REST exposure (which only key requests get) and the meta fields |
 | Taxonomies | all public enabled | Same as post types, for taxonomies |
 | Options allowlist | site basics (`blogname`, `home`, `timezone_string`, `permalink_structure`, …) | Exact option names returned by `options` |
 | Option prefixes | `wpseo_`, `aioseo_` | Every option starting with a prefix is returned, unless its name hits the deny-list |

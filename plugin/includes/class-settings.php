@@ -368,7 +368,7 @@ class Settings {
 								<label><input type="checkbox" name="post_types[]" value="<?php echo esc_attr( $name ); ?>" <?php checked( ! isset( $type_flags[ $name ] ) || false !== (bool) $type_flags[ $name ] ); ?> />
 								<?php echo esc_html( $obj->labels->name ); ?> <code><?php echo esc_html( $name ); ?></code></label><br />
 							<?php endforeach; ?>
-							<p class="description"><?php esc_html_e( 'Unchecked types are not added to the REST API by this plugin.', 'mindful-import' ); ?></p>
+							<p class="description"><?php esc_html_e( 'Checked types are added to the REST API for key-authenticated requests only. Unchecked types are never added.', 'mindful-import' ); ?></p>
 						</fieldset></td>
 					</tr>
 					<tr>

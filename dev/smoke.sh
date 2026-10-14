@@ -65,10 +65,12 @@ expect_jq "discovery: changes.head_id is a number" "$API/discovery" '.changes.he
 echo "== core routes: meta fields"
 expect_status "news: 200 with key" GET "$WPV2/news" 200 "$H"
 expect_jq "news: post_meta_fields.mi_source" "$WPV2/news" '.[0].post_meta_fields.mi_source == "wire"' "$H"
-expect_status "news: 200 without key" GET "$WPV2/news" 200
-expect_jq "posts: anonymous response has no post_meta_fields key" "$WPV2/posts?per_page=1" '(.[0] | has("post_meta_fields")) | not'
-expect_jq "news: no post_meta_fields without key" "$WPV2/news" '.[0] | (has("post_meta_fields") | not) or .post_meta_fields == null'
+expect_status "news: 404 without key (forced REST is key-only)" GET "$WPV2/news" 404
+expect_status "news_topic: 404 without key" GET "$WPV2/news_topic" 404
+if [ "$(wpv eval 'echo get_post_type_object("news")->show_in_rest ? "yes" : "no";')" = "no" ]; then pass "news: show_in_rest stays false outside a key request"
+else fail "news: show_in_rest stays false outside a key request"; fi
 P="$WPV2/posts?search=Published"
+expect_jq "posts: no post_meta_fields key at all without key" "$P" '.[0] | has("post_meta_fields") | not'
 expect_jq "posts: dotted key flattened to mi__dotted" "$P" '.[0].post_meta_fields.mi__dotted == "dotval"' "$H"
 expect_jq "posts: _yoast_wpseo_title" "$P" '.[0].post_meta_fields._yoast_wpseo_title == "Custom SEO Title"' "$H"
 expect_jq "posts: mi_multi has 2 values" "$P" '.[0].post_meta_fields.mi_multi | length == 2' "$H"
