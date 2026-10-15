@@ -5,8 +5,10 @@
 Mindful Import is a read-only WordPress plugin that exposes what a Mindful CMS import needs and what core
 WordPress REST does not return. That covers post meta on every post type, term meta, every user, an allowlisted
 set of options, redirect rules, rendered content and a change log for incremental (delta) imports. Every request
-authenticates with a single key sent on the `X-Mindful-Import-Key` header. The key does not go in `Authorization`
-because many hosts and proxies strip that header before it reaches PHP. The plugin never writes content: any
+authenticates with a single key sent on the `X-Mindful-Import-Key` header. The plugin generates that key itself and
+registers it with Mindful automatically (see [Import registration](#import-registration)); the importer then sends it
+on every request. The key does not go in `Authorization` because many hosts and proxies strip that header before it
+reaches PHP. The plugin never writes content: any
 non-GET request that carries the key gets a 403.
 
 ## Install
@@ -15,11 +17,41 @@ non-GET request that carries the key gets a 403.
    **Plugins → Add New → Upload Plugin**. You can also copy the `plugin/` folder to
    `wp-content/plugins/mindful-import/`.
 2. Activate **Mindful Import**.
-3. Go to **Settings → Mindful Import** and click **Generate key**. The key is shown once, in the admin notice.
-   Only a salted hash is stored, so copy the key before you leave the page.
-4. Send Parameter1 the key and the discovery URL, `https://<site>/wp-json/mindful-import/v1/discovery`.
 
-Generating a new key revokes the old one straight away.
+On activation the plugin generates an import key and registers it with Mindful over HTTPS. Check
+**Settings → Mindful Import** for the registration status. No key is shown and nothing needs to be sent to
+Parameter1.
+
+## Import registration
+
+Registration is how the plugin hands its import key to Mindful without anyone seeing it.
+
+- **What is sent.** A JSON `POST` of `{"site": "<hostname>", "key": "<import key>"}` to
+  `MINDFUL_IMPORT_REGISTRATION_URL` (default `https://apis.mindfulcms.com/import-initiate`). The hostname is the
+  host of the site's Home URL. Nothing else is sent.
+- **When.** On activation (inline); on the first load of a new plugin version when the site is not registered yet
+  (queued on WP-Cron, never inline on a page load); and when an administrator clicks **Register with Mindful** (or
+  **Rotate key and re-register**) on the settings page.
+- **Retries.** A failed attempt schedules the next one on WP-Cron after 5 minutes, then 1 hour, 6 hours and
+  24 hours. After 5 failed attempts in a row the plugin stops retrying on its own; the settings page button still
+  works, and a success resets the count.
+- **Status** (shown on the settings page and returned as `registration_status` by the `settings` route):
+  `registered` (Mindful accepted the key; `registered_at` says when), `failed` (the last attempt failed; the
+  settings page shows the error, the attempt count and the next retry, and an admin notice appears on the Plugins
+  screen), `pending` (an attempt is queued on WP-Cron) or empty (never attempted).
+- **The previous key keeps working until a new one is accepted.** Each attempt generates a new key and makes it
+  live on the site before sending it, because Mindful may call the discovery route to check it while the request
+  is open. If Mindful does not answer with a 2xx, the previous key (or no key, on a fresh install) is put back, so
+  an import that already works is never broken by a failed attempt. On success the previous key stops working.
+- **The plaintext is never displayed or stored.** It exists only in memory for the length of the request. The site
+  keeps a salted hash, as before.
+- **HTTPS.** Imports run over HTTPS only. That is enforced by the Mindful importer, which refuses to sync a site
+  without a valid `https` REST URL. The plugin itself does not block registration on an `http` site; it registers,
+  and the importer reports the problem. The registration request itself goes over `https` (outside `local` and
+  `development` environments), with the certificate verified and redirects never followed.
+- **Overriding the URL.** `define( 'MINDFUL_IMPORT_REGISTRATION_URL', '…' );` in `wp-config.php` replaces the
+  default. A non-`https` URL is accepted only when `WP_ENVIRONMENT_TYPE` is `local` or `development` (the dev
+  harness uses this); anywhere else registration fails with an error and the key is left untouched.
 
 ## What it exposes
 
@@ -29,7 +61,7 @@ Generating a new key revokes the old one straight away.
 |---|---|---|
 | `discovery` | none | `{plugin:{version,hook_api}, wordpress, post_types:[{name,label,public,show_in_rest,rest_base,hierarchical,taxonomies,count}], taxonomies, plugins:[{file,name,version}], theme, settings, changes:{head_id}, …}`: everything needed to plan a run |
 | `options` | `names` (comma list, narrows the result) | `{options:[{key,value}], denied_count}` |
-| `settings` | none | Plugin settings without secrets: `{post_types, taxonomies, options_allowlist, options_prefixes, retention_days, render_enabled, key_created_at, version, …}` |
+| `settings` | none | Plugin settings without secrets: `{post_types, taxonomies, options_allowlist, options_prefixes, retention_days, render_enabled, key_created_at, registration_status, registered_at, version, …}` |
 | `users` | `page` (1), `per_page` (100, max 500) | `[{id,login,email,display_name,nicename,url,registered,roles,first_name,last_name,nickname,description,avatar_url,meta}]`. Includes users with no posts, never the plugin's own `mindful-import` account. Sends `X-WP-Total` / `X-WP-TotalPages` |
 | `changes` | `after` (id, 0), `limit` (100, max 500), `object_type` (`post`/`attachment`/`term`/`user`), `since` (ISO 8601) | `{changes:[{id,object_type,object_id,post_type,taxonomy,action,old_status,new_status,changed_at,user_id}], head_id, has_more, next_after}` |
 | `changes/latest` | none | `{head_id, latest, …}` |
@@ -89,7 +121,7 @@ and again on the first load of each new version, so mu-plugin installs, which ne
 
 | Setting | Default | Effect |
 |---|---|---|
-| Key | none | Generate (or rotate) the import key. Shows when the key was created |
+| Registration | registered on activation | Shows the registration status and when the key was created. **Register with Mindful** (or **Rotate key and re-register** once registered) generates a new key and registers it |
 | Post types | all public enabled | Untick a type to keep it out of forced REST exposure (which only key requests get) and the meta fields |
 | Taxonomies | all public enabled | Same as post types, for taxonomies |
 | Options allowlist | site basics (`blogname`, `home`, `timezone_string`, `permalink_structure`, …) | Exact option names returned by `options` |
@@ -100,11 +132,21 @@ and again on the first load of each new version, so mu-plugin installs, which ne
 ## Security notes
 
 - **Key hashing.** Only `sha256(salt + key)` and the salt are stored, and comparison uses `hash_equals`. The
-  plaintext appears once, at generation. Neither `settings` nor `discovery` ever returns the hash or the salt.
+  plaintext exists only in memory while registration runs: it is never displayed, stored, logged or put in an
+  error message (a response that echoes it back is redacted). Neither `settings` nor `discovery` ever returns the
+  hash or the salt.
+- **Registration transport.** The key leaves the site in one request, to `MINDFUL_IMPORT_REGISTRATION_URL`, over
+  HTTPS with certificate verification on and redirects never followed, so a redirect cannot carry the key
+  elsewhere. The plugin adds no filter for changing the destination; only a `wp-config.php` constant can, and a
+  non-`https` URL is refused outside `local` and `development` environments.
+- **Future: request signing.** A Mindful-held ed25519 key pair could be added as a second factor: the public key
+  would ship in the plugin and every import request would be signed with the private key, so a leaked site key on
+  its own would be useless. It is not part of the initial release.
 - **Dedicated role and user.** Key requests run as a dedicated `mindful-import` user with the `mindful_import`
   role, which holds `read` and nothing else. The user's password is 64 random characters generated at
   creation and never shown to anyone, not even Parameter1. The account cannot log in interactively and
-  cannot hold application passwords. The only secret that leaves the site is the import key.
+  cannot hold application passwords. The only secret that leaves the site is the import key, and only through
+  registration.
 - **Why the request-time grant includes `edit_*` capabilities.** The plugin's own routes need no
   capabilities at all. The edit capabilities exist only for core `wp/v2` routes, because WordPress has no
   "read unpublished content" capability and uses edit permissions as the proxy for it:
@@ -133,7 +175,8 @@ and again on the first load of each new version, so mu-plugin installs, which ne
   and friends as whole name parts, and `key` as the last part (`api_key`). Matching is by whole token, so
   `focus_keyword`, `passions` or `key_skills` come through.
 - **403 on writes and on non-content routes.** See the read-only guarantee above.
-- **Uninstall** removes the option, the change-log table, the role and the import user.
+- **Uninstall** removes the option, the change-log table, the role, the import user and the retention and
+  registration cron events.
 
 ## Extending per site
 
@@ -185,8 +228,8 @@ Requires Docker, `curl` and `jq`.
 
 ```sh
 docker compose up -d          # WordPress on http://localhost:8089 + MySQL 8 (project: mindful-import-dev)
-dev/seed.sh                   # install, activate, seed fixtures, write a key to dev/.key (admin / admin)
-dev/smoke.sh                  # end-to-end assertions; prints "SMOKE: N passed, M failed"; rotates the key
+dev/seed.sh                   # install, activate, seed fixtures, register and write the key to dev/.key (admin / admin)
+dev/smoke.sh                  # end-to-end assertions; prints "SMOKE: N passed, M failed"; re-registers (rotates the key)
 scripts/build-zip.sh          # dist/mindful-import-<version>.zip
 docker compose --profile tools run --rm cli plugin list     # wp-cli
 docker run --rm -v "$PWD/plugin:/p" php:7.4-cli sh -c 'for f in $(find /p -name "*.php" -not -path "*/vendor/*"); do php -l "$f"; done'
@@ -200,9 +243,19 @@ go to `wp-content/debug.log` inside the container, never into responses.
 
 `dev/test-cpt.php` is mounted as a must-use plugin on the dev site only. It registers a `news` CPT (with its
 own `capability_type`) and a `news_topic` taxonomy that are deliberately not in REST, a `[mi_test]` shortcode,
-a non-public `secret_internal` type and an `mi_whoami` ajax action. It is a single-file bind mount, so after
-editing it with a tool that replaces the file, run `docker compose up -d --force-recreate wordpress` or the
-container keeps the old inode and every request fails with a missing-include warning.
+a non-public `secret_internal` type, an `mi_whoami` ajax action and the mock Mindful registration receiver. It is a
+single-file bind mount, so after editing it with a tool that replaces the file, run
+`docker compose up -d --force-recreate wordpress` or the container keeps the old inode and every request fails with
+a missing-include warning.
+
+Registration in the harness goes to that mock receiver, never to Mindful. `docker-compose.yml` sets two defines in
+`WORDPRESS_CONFIG_EXTRA`: `WP_ENVIRONMENT_TYPE` = `local` (so an `http` registration URL is accepted) and
+`MINDFUL_IMPORT_REGISTRATION_URL` = `http://wordpress/?rest_route=/mi-dev/v1/registrations` (`wordpress` is the
+compose service name, reachable from both the `wordpress` and `cli` containers; `localhost:8089` works only from the
+host). The receiver (`POST mi-dev/v1/registrations`) keeps the last 10 registrations in the `mi_dev_registrations`
+option, and `wp eval 'print_r( mi_dev_last_registration() );'` shows the latest. Setting the option
+`mi_dev_registration_fail` to `1` makes it answer 500, which is how the smoke test exercises the failure path.
+Changes to `WORDPRESS_CONFIG_EXTRA` also need `docker compose up -d --force-recreate wordpress` to take effect.
 
 ## License
 

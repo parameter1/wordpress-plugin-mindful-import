@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # End-to-end checks against the seeded harness (dev/seed.sh first). Needs curl + jq on the host.
-# Rotates the key at the end and writes the new one to dev/.key.
+# Re-registers (rotating the key) at the end and writes the new key to dev/.key.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -187,13 +187,62 @@ wp option patch delete mindful_import installed_version >/dev/null 2>&1
 if [ "$(wpv eval 'echo array_key_exists("last_seen", (array) get_option("mindful_import")) ? "present" : "gone";')" = "gone" ]; then pass "option: stale last_seen key removed by upgrade"
 else fail "option: stale last_seen key removed by upgrade"; fi
 
-echo "== key rotation"
-NEWKEY=$(wpv eval 'echo Mindful_Import\Auth::generate_key();')
-if [ -z "$NEWKEY" ]; then
-  fail "rotation: generate_key returned a key"
+echo "== import registration"
+# Last registration the mock receiver (dev/test-cpt.php) accepted, as JSON.
+last_reg() { wp eval 'echo wp_json_encode( mi_dev_last_registration() );' 2>/dev/null | tr -d '\r' | tail -n1; }
+reg_setting() { wpv eval "echo Mindful_Import\\Settings::get( '$1' );"; }
+if [ "$(reg_setting registration_status)" = "registered" ]; then pass "registration: status is registered"
+else fail "registration: status is registered" "$(reg_setting registration_status)"; fi
+LAST=$(last_reg)
+if [ "$(printf '%s' "$LAST" | jq -r '.site // empty' 2>/dev/null)" = "localhost" ]; then pass "registration: receiver got site=localhost"
+else fail "registration: receiver got site=localhost" "$(printf '%s' "$LAST" | jq -c '.site' 2>/dev/null)"; fi
+if printf '%s' "$LAST" | jq -e '.user_agent | test("^Mindful-Import/")' >/dev/null 2>&1; then pass "registration: user agent is Mindful-Import/<version>"
+else fail "registration: user agent is Mindful-Import/<version>"; fi
+REGKEY=$(printf '%s' "$LAST" | jq -r '.key // empty' 2>/dev/null)
+if [ -n "$REGKEY" ]; then expect_status "registration: receiver's key gets 200 on discovery" GET "$API/discovery" 200 "X-Mindful-Import-Key: $REGKEY"
+else fail "registration: receiver's key gets 200 on discovery" "receiver has no key"; fi
+expect_jq "registration: settings.registration_status == registered" "$API/settings" '.registration_status == "registered"' "$H"
+expect_jq "registration: settings.registered_at is a positive number" "$API/settings" '.registered_at | type=="number" and . > 0' "$H"
+expect_jq "registration: settings still has no key_hash/key_salt" "$API/settings" '[.. | objects | keys[]] | map(select(.=="key_hash" or .=="key_salt")) | length == 0' "$H"
+if wpv eval 'echo wp_json_encode( get_option( "mindful_import" ) );' | grep -q -F -e "$KEY"; then fail "registration: plaintext key is not in the option"
+else pass "registration: plaintext key is not in the option"; fi
+
+echo "== import registration: failure keeps the previous key"
+wp option update mi_dev_registration_fail 1 >/dev/null 2>&1
+RESULT=$(wpv eval '$r = Mindful_Import\Registration::register(); echo is_wp_error( $r ) ? "wp_error" : "ok";')
+if [ "$RESULT" = "wp_error" ]; then pass "failure: register() returned a WP_Error"; else fail "failure: register() returned a WP_Error" "$RESULT"; fi
+if [ "$(reg_setting registration_status)" = "failed" ]; then pass "failure: status is failed"
+else fail "failure: status is failed" "$(reg_setting registration_status)"; fi
+ERR=$(wp eval "echo Mindful_Import\\Settings::get( 'registration_error' );" 2>/dev/null | tr -d '\r' | tail -n1)
+if [ -n "$ERR" ]; then pass "failure: registration_error set ($ERR)"; else fail "failure: registration_error set"; fi
+if printf '%s' "$ERR" | grep -q -F -e "$KEY"; then fail "failure: error message does not contain a key"; else pass "failure: error message does not contain a key"; fi
+if [ "$(reg_setting registration_attempts)" -ge 1 ] 2>/dev/null; then pass "failure: attempts counted"
+else fail "failure: attempts counted" "$(reg_setting registration_attempts)"; fi
+NEXT=$(wpv eval 'echo (int) wp_next_scheduled( Mindful_Import\Registration::CRON_HOOK );')
+if [ "${NEXT:-0}" -gt 0 ] 2>/dev/null; then pass "failure: retry scheduled"; else fail "failure: retry scheduled" "next=$NEXT"; fi
+expect_status "failure: previous key still 200 on discovery (snapshot restored)" GET "$API/discovery" 200 "$H"
+if [ "$(last_reg | jq -r '.key // empty' 2>/dev/null)" = "$KEY" ]; then pass "failure: receiver recorded nothing new"
+else fail "failure: receiver recorded nothing new"; fi
+wp option delete mi_dev_registration_fail >/dev/null 2>&1
+
+echo "== import registration: https policy"
+POLICY=$(wpv eval 'echo (int) Mindful_Import\Registration::is_url_allowed( "http://example.com/x", "production" ), (int) Mindful_Import\Registration::is_url_allowed( "https://example.com/x", "production" ), (int) Mindful_Import\Registration::is_url_allowed( "http://example.com/x", "local" ), (int) Mindful_Import\Registration::is_url_allowed( "ftp://example.com", "local" ), (int) Mindful_Import\Registration::is_url_allowed( "http://example.com/x", "development" ), (int) Mindful_Import\Registration::is_url_allowed( "https:///nohost", "production" );')
+if [ "$POLICY" = "011010" ]; then pass "policy: https always; http only on local/development; ftp and hostless refused"
+else fail "policy: https always; http only on local/development; ftp and hostless refused" "got $POLICY, want 011010"; fi
+
+echo "== key rotation (re-registration)"
+RESULT=$(wpv eval '$r = Mindful_Import\Registration::register(); echo is_wp_error( $r ) ? "wp_error" : "ok";')
+NEWKEY=$(last_reg | jq -r '.key // empty' 2>/dev/null)
+if [ "$RESULT" != "ok" ] || [ -z "$NEWKEY" ] || [ "$NEWKEY" = "$KEY" ]; then
+  fail "rotation: register() succeeded and the receiver got a new key" "result=$RESULT"
 else
+  pass "rotation: register() succeeded and the receiver got a new key"
   expect_status "rotation: old key 401" GET "$API/discovery" 401 "$H"
   expect_status "rotation: new key 200" GET "$API/discovery" 200 "X-Mindful-Import-Key: $NEWKEY"
+  if [ "$(reg_setting registration_status)" = "registered" ] && [ "$(reg_setting registration_attempts)" = "0" ]; then pass "rotation: status registered, attempts reset"
+  else fail "rotation: status registered, attempts reset"; fi
+  if [ "$(wpv eval 'echo (int) wp_next_scheduled( Mindful_Import\Registration::CRON_HOOK );')" = "0" ]; then pass "rotation: pending retry cleared"
+  else fail "rotation: pending retry cleared"; fi
   printf '%s\n' "$NEWKEY" > dev/.key
 fi
 

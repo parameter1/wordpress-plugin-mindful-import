@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Seeds the local harness (docker compose up -d first). Idempotent: safe to re-run.
-# Writes a fresh import key to dev/.key on every run (the previous key stops working).
+# Registers with the mock receiver on every run and writes the new key to dev/.key (the previous key stops working).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -127,9 +127,14 @@ else
 fi
 
 # ---------- key ----------
-log "Generating import key"
-KEY=$(wpv eval 'echo Mindful_Import\Auth::generate_key();')
-[ -n "$KEY" ] || { echo "key generation returned nothing" >&2; exit 1; }
+# Activation registered once on the first run; register again so every run (and re-run) ends with a fresh key
+# that the mock receiver in dev/test-cpt.php recorded.
+log "Registering with the mock Mindful receiver"
+wp option delete mi_dev_registration_fail >/dev/null 2>&1 || true
+REG=$(wp eval '$r = Mindful_Import\Registration::register(); echo is_wp_error( $r ) ? "error: " . $r->get_error_message() : "ok";' | tr -d '\r' | tail -n1)
+[ "$REG" = "ok" ] || { echo "registration failed: $REG" >&2; exit 1; }
+KEY=$(wpv eval '$r = mi_dev_last_registration(); echo $r ? $r["key"] : "";')
+[ -n "$KEY" ] || { echo "the mock receiver recorded no key" >&2; exit 1; }
 printf '%s\n' "$KEY" > dev/.key
 chmod 600 dev/.key
 
