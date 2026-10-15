@@ -27,7 +27,7 @@ Parameter1.
 Registration is how the plugin hands its import key to Mindful without anyone seeing it.
 
 - **What is sent.** A JSON `POST` of `{"rest_url": "<REST URL>", "key": "<import key>"}` to
-  `MINDFUL_IMPORT_REGISTRATION_URL` (default `https://apis.mindfulcms.com/import/register`). The REST URL is the
+  `MINDFUL_IMPORT_REGISTRATION_URL` (default `https://apis.mindfulcms.com/import/wordpress/register`). The REST URL is the
   site's `rest_url()`, for example `https://www.example.com/wp-json/`: it carries the scheme and any subdirectory,
   so Mindful can reach the discovery route directly. Nothing else is sent.
 - **When.** On activation (inline); on the first load of a new plugin version when the site is not registered yet
