@@ -1,9 +1,11 @@
 <?php
 /**
- * Public hook reference for companion plugins. Documentation only: every hook below is
- * emitted by the class named in its doc block. Hook API version: MINDFUL_IMPORT_HOOK_API.
+ * Public hook reference. Documentation only: every hook below is emitted by the class named in
+ * its doc block. Hook API version: MINDFUL_IMPORT_HOOK_API.
  *
- * Detect the core plugin from a companion with:
+ * The plugin needs nothing installed beside it. These hooks are for site-side code (an mu-plugin
+ * or a theme's functions.php) that wants to adjust what the plugin exposes; none of them can
+ * authenticate a request. Detect the plugin with:
  *
  *     if ( function_exists( 'mindful_import' ) && mindful_import()['hook_api'] >= 1 ) { ... }
  *
@@ -106,23 +108,23 @@ defined( 'ABSPATH' ) || exit;
  */
 
 /**
- * Filter: mindful_import_authenticate
+ * Filter: mindful_import_allowed_routes
  *
- * Lets a companion authenticate a REST request when the X-Mindful-Import-Key check fails.
- * Return a user id to treat the request as an import request (read-only rules still apply),
- * or null to leave it unauthenticated. May be called before a WP_REST_Request exists
- * (during `determine_current_user`), in which case $request is null. Emitted by Auth.
+ * Adjusts the REST route prefixes an import request may reach. The default list is this
+ * plugin's namespace, every REST-visible post type and taxonomy, and core's users, comments,
+ * types, taxonomies, statuses and search; a prefix matches itself and everything below it.
+ * Routes outside the list answer 403 (`mindful_import_route_denied`) even on GET. Routes added
+ * with REST::add_route() are under the plugin namespace and need no entry here. Emitted by Auth.
  *
- * @param int|null              $user_id Null when not authenticated.
- * @param \WP_REST_Request|null $request The request, when available.
- * @return int|null
+ * @param string[] $routes Route prefixes, e.g. "/wp/v2/posts".
+ * @return string[]
  *
  * Example:
  *
- *     add_filter( 'mindful_import_authenticate', function ( $user_id, $request ) {
- *         $token = $request ? $request->get_header( 'x-my-token' ) : null;
- *         return ( $token && my_verify( $token ) ) ? my_service_user_id() : $user_id;
- *     }, 10, 2 );
+ *     add_filter( 'mindful_import_allowed_routes', function ( $routes ) {
+ *         $routes[] = '/wc/v3/products';
+ *         return $routes;
+ *     } );
  */
 
 /**
@@ -137,7 +139,7 @@ defined( 'ABSPATH' ) || exit;
  * Example:
  *
  *     add_filter( 'mindful_import_discovery', function ( $discovery ) {
- *         $discovery['resources'][] = 'my-companion/v1/things';
+ *         $discovery['resources'][] = 'my-site/v1/things';
  *         return $discovery;
  *     } );
  */
@@ -145,7 +147,7 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Action: mindful_import_register_resource
  *
- * Fires during `rest_api_init` (priority 20) so companions can register extra routes
+ * Fires during `rest_api_init` (priority 20) so site-side code can register extra routes
  * protected by the same key. Use REST::add_route() to inherit the permission callback.
  *
  * @param string $namespace The REST namespace (mindful-import/v1).

@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Seeds the local harness (docker compose up -d first). Idempotent: safe to re-run.
 # Writes a fresh import key to dev/.key on every run (the previous key stops working).
-#   SEED_COMPANION=1 dev/seed.sh   also activates examples/companion.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -39,8 +38,6 @@ else
   warn "Redirection install failed (offline?); redirect checks will be warn-only"
 fi
 
-if [ "${SEED_COMPANION:-0}" = 1 ]; then wp plugin activate mindful-import-example; fi
-
 # ---------- users ----------
 ensure_user() { # login email role first last description
   local id
@@ -54,6 +51,10 @@ log "Users"
 JANE=$(ensure_user jane jane@example.com author Jane Doe "Jane covers robotics and automation.")
 ensure_user nobody nobody@example.com subscriber No Body "Subscriber with no posts." >/dev/null
 wp user meta update jane twitter janedoe >/dev/null
+# A legitimate Yoast profile key the old substring deny-list dropped, and the Joomla password hash that
+# FG Joomla to WordPress leaves on every migrated user, which must never come through.
+wp user meta update jane wpseo_keyword_analysis_disable on >/dev/null
+wp user meta update jane joomlapass 'not-a-real-hash' >/dev/null
 
 # ---------- terms ----------
 ensure_term() { # taxonomy name

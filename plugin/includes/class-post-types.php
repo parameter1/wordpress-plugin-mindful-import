@@ -1,6 +1,9 @@
 <?php
 /**
- * Puts every public post type and taxonomy into the REST API.
+ * Puts every public post type and taxonomy into the REST API, on key-authenticated requests only.
+ *
+ * Anonymous visitors and the admin (including the block-editor choice, which core derives from
+ * show_in_rest) see every type exactly as the site registered it.
  *
  * @package Mindful_Import
  */
@@ -75,6 +78,9 @@ class Post_Types {
 		if ( empty( $args['public'] ) || ! self::is_enabled( 'post_types', $post_type ) ) {
 			return $args;
 		}
+		if ( ! Auth::is_import_request() ) {
+			return $args; // No key on this request: leave the type as the site registered it.
+		}
 		return self::apply_rest( $args, $post_type );
 	}
 
@@ -96,6 +102,9 @@ class Post_Types {
 		}
 		if ( ! empty( $args['show_in_rest'] ) ) {
 			return $args; // Already in REST (core category/post_tag, or plugin-registered): leave it.
+		}
+		if ( ! Auth::is_import_request() ) {
+			return $args; // No key on this request: leave the taxonomy as the site registered it.
 		}
 		return self::apply_rest( $args, $taxonomy );
 	}

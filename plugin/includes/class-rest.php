@@ -22,9 +22,18 @@ class REST {
 	const OPTION_DENY = '/(key|secret|token|password|passwd|salt|smtp|auth|private|license)/i';
 
 	/**
-	 * User meta keys never returned.
+	 * User meta keys never returned. One pattern per concern:
+	 *  1. credential-looking names, matched as whole tokens (split on _ and -) so keyword, passions
+	 *     and secretary pass; "key" is denied only as the last token (api_key), so key_skills passes;
+	 *     a name that ends in pass/password/pwd is denied even run together (joomlapass, userpass);
+	 *  2. core account keys behind any table prefix (wp_capabilities, wp_2_user_level, session_tokens);
+	 *  3. admin UI preferences and screen options.
 	 */
-	const USER_META_DENY = '/(pass|session|capabilities|user_level|token|secret|key|dismissed|wp_[a-z0-9_]*settings|syntax_highlighting|closedpostboxes|metaboxhidden|meta-box-order|screen_layout|edit_[a-z_]+_per_page|nav_menu_recently_edited|community-events-location|show_admin_bar_front|admin_color|use_ssl|rich_editing|comment_shortcuts|locale|dashboard_quick_press_last_post_id)/i';
+	const USER_META_DENY = array(
+		'/(^|[_-])(pass|password|passwd|tokens?|secrets?|apikey|accesstoken|authtoken|secretkey|privatekey)([_-]|$)|(^|[_-])keys?$|(pass|password|passwd|pwd)$/i',
+		'/(^|_)(session_tokens|capabilities|user_level|user-settings|user-settings-time|persisted_preferences|dashboard_quick_press_last_post_id|media_library_mode)$/i',
+		'/^(dismissed_|closedpostboxes_|metaboxhidden_|meta-box-order_|screen_layout_|manage.+columnshidden$|.+_per_page$|nav_menu_recently_edited$|community-events-location$|show_admin_bar_front$|show_welcome_panel$|admin_color$|use_ssl$|rich_editing$|syntax_highlighting$|comment_shortcuts$|locale$|default_password_nag$)/i',
+	);
 
 	/**
 	 * Hooks rest_api_init.
@@ -35,7 +44,7 @@ class REST {
 			'rest_api_init',
 			function () {
 				/**
-				 * Lets companion plugins register routes with REST::add_route().
+				 * Lets site-side code register routes with REST::add_route().
 				 *
 				 * @param string $namespace mindful-import/v1
 				 */
@@ -390,7 +399,6 @@ class REST {
 				'retention_days'    => (int) Settings::get( 'retention_days', 90 ),
 				'render_enabled'    => (bool) Settings::get( 'render_enabled', true ),
 				'key_created_at'    => Settings::get( 'key_created_at' ),
-				'last_seen'         => Settings::get( 'last_seen' ),
 				'import_user_id'    => (int) Auth::import_user_id(),
 				'version'           => MINDFUL_IMPORT_VERSION,
 				'hook_api'          => MINDFUL_IMPORT_HOOK_API,
@@ -399,7 +407,8 @@ class REST {
 	}
 
 	/**
-	 * GET users: every user (authors or not), paginated, with allowlisted meta.
+	 * GET users: every user (authors or not) except the plugin's own service account, paginated,
+	 * with allowlisted meta.
 	 *
 	 * @param \WP_REST_Request $request Request.
 	 * @return \WP_REST_Response
@@ -416,6 +425,7 @@ class REST {
 				'order'       => 'ASC',
 				'fields'      => 'all',
 				'count_total' => true,
+				'exclude'     => array_filter( array( (int) Auth::import_user_id() ) ),
 			)
 		);
 		$total = (int) $query->get_total();
@@ -440,7 +450,7 @@ class REST {
 	private static function user_fields( \WP_User $user ) {
 		$meta = array();
 		foreach ( (array) get_user_meta( $user->ID ) as $key => $values ) {
-			if ( ! preg_match( self::USER_META_DENY, (string) $key ) ) {
+			if ( ! self::is_denied_user_meta( (string) $key ) ) {
 				$meta[ $key ] = $values;
 			}
 		}
@@ -468,6 +478,25 @@ class REST {
 		 * @param array    $fields
 		 * @param \WP_User $user
 		 */
-		return apply_filters( 'mindful_import_user_fields', $fields, $user );
+		$fields = apply_filters( 'mindful_import_user_fields', $fields, $user );
+		if ( is_array( $fields ) && isset( $fields['meta'] ) && is_array( $fields['meta'] ) ) {
+			$fields['meta'] = Fields::as_object( $fields['meta'] );
+		}
+		return $fields;
+	}
+
+	/**
+	 * Whether a user meta key matches USER_META_DENY.
+	 *
+	 * @param string $key Meta key.
+	 * @return bool
+	 */
+	private static function is_denied_user_meta( $key ) {
+		foreach ( self::USER_META_DENY as $pattern ) {
+			if ( preg_match( $pattern, $key ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 }

@@ -38,18 +38,57 @@ class Auth {
 	private static $checked_request = null;
 
 	/**
+	 * Memoised request-time capability grant (see request_caps()).
+	 *
+	 * @var array<string,bool>|null
+	 */
+	private static $request_caps = null;
+
+	/**
+	 * Memoised allowed route prefixes (see allowed_routes()).
+	 *
+	 * @var string[]|null
+	 */
+	private static $allowed_routes = null;
+
+	/**
+	 * Capabilities never granted to the import user, whatever a post type or taxonomy maps its own
+	 * capabilities to (wp_template maps edit_posts to edit_theme_options, for example).
+	 */
+	const NEVER_GRANT = array(
+		'manage_options',
+		'edit_theme_options',
+		'edit_users',
+		'edit_files',
+		'edit_plugins',
+		'edit_themes',
+		'edit_dashboard',
+		'manage_links',
+		'manage_sites',
+		'manage_network',
+		'manage_network_users',
+		'manage_network_plugins',
+		'manage_network_themes',
+		'manage_network_options',
+		'upload_files',
+		'unfiltered_html',
+		'unfiltered_upload',
+	);
+
+	/**
 	 * Registers hooks.
 	 */
 	public static function init() {
 		add_filter( 'determine_current_user', array( __CLASS__, 'determine_current_user' ), 20 );
 		add_filter( 'rest_authentication_errors', array( __CLASS__, 'rest_authentication_errors' ), 90 );
 		add_filter( 'rest_pre_dispatch', array( __CLASS__, 'rest_pre_dispatch' ), 10, 3 );
+		add_filter( 'user_has_cap', array( __CLASS__, 'user_has_cap' ), 10, 4 );
 		add_filter( 'wp_authenticate_user', array( __CLASS__, 'block_interactive_login' ), 10, 1 );
 		add_filter( 'wp_is_application_passwords_available_for_user', array( __CLASS__, 'block_application_passwords' ), 10, 2 );
 	}
 
 	/**
-	 * Whether the current request carried a valid key (or a companion authenticated it).
+	 * Whether the current request carried a valid key. Only the key authenticates a request.
 	 *
 	 * @param \WP_REST_Request|null $request Optional request to read the header from.
 	 * @return bool
@@ -87,7 +126,7 @@ class Auth {
 	}
 
 	/**
-	 * Resolves the import user for this request from the header or the companion filter.
+	 * Resolves the import user for this request from the key header.
 	 *
 	 * @param \WP_REST_Request|null $request Request, when available.
 	 */
@@ -98,33 +137,16 @@ class Auth {
 		self::$resolving = true;
 
 		$user_id = 0;
-		// Only REST requests are ever authenticated by this plugin.
-		$is_rest = null !== $request || self::is_rest_uri();
+		// Only REST requests are ever authenticated by this plugin, whatever object we were handed.
+		$is_rest = self::is_rest_uri();
 		$plain   = $is_rest ? self::header_value( $request ) : null;
 
 		if ( null !== $plain && self::verify_key( $plain ) ) {
 			$user_id = self::import_user_id();
 		}
 
-		if ( ! $user_id && $is_rest ) {
-			/**
-			 * Lets a companion plugin authenticate the request when the key path fails.
-			 *
-			 * @param int|null              $user_id Null when not authenticated.
-			 * @param \WP_REST_Request|null $request Request, when available.
-			 */
-			$filtered = apply_filters( 'mindful_import_authenticate', null, $request );
-			if ( is_numeric( $filtered ) && (int) $filtered > 0 && get_userdata( (int) $filtered ) ) {
-				$user_id = (int) $filtered;
-			}
-		}
-
 		self::$user_id   = $user_id;
 		self::$resolving = false;
-
-		if ( $user_id ) {
-			self::record_last_seen();
-		}
 	}
 
 	/**
@@ -149,13 +171,26 @@ class Auth {
 	}
 
 	/**
-	 * Whether the URI targets the REST API (the key is honoured on REST requests only).
+	 * Whether this request is served by the REST API (the key is honoured on REST requests only).
+	 *
+	 * Core serves REST through index.php alone (parse_request → rest_api_loaded). Admin screens,
+	 * admin-ajax.php, admin-post.php, wp-login.php, cron, XML-RPC and WP-CLI never are, whatever
+	 * their query string says, so a key sent there is ignored and the request stays anonymous.
 	 *
 	 * @return bool
 	 */
 	private static function is_rest_uri() {
+		if ( is_admin() || wp_doing_ajax() || wp_doing_cron() ) {
+			return false;
+		}
+		if ( ( defined( 'XMLRPC_REQUEST' ) && XMLRPC_REQUEST ) || ( defined( 'WP_CLI' ) && WP_CLI ) ) {
+			return false;
+		}
 		if ( defined( 'REST_REQUEST' ) && REST_REQUEST ) {
 			return true;
+		}
+		if ( empty( $GLOBALS['pagenow'] ) || 'index.php' !== $GLOBALS['pagenow'] ) {
+			return false;
 		}
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- routing check only.
 		if ( isset( $_GET['rest_route'] ) ) {
@@ -204,7 +239,7 @@ class Auth {
 	}
 
 	/**
-	 * `rest_pre_dispatch`: import requests are read-only.
+	 * `rest_pre_dispatch`: import requests are read-only and limited to content routes.
 	 *
 	 * @param mixed            $result  Prior result.
 	 * @param \WP_REST_Server  $server  Server.
@@ -212,7 +247,7 @@ class Auth {
 	 * @return mixed
 	 */
 	public static function rest_pre_dispatch( $result, $server, $request ) {
-		if ( ! ( $request instanceof \WP_REST_Request ) || ! self::is_import_request() ) {
+		if ( ! ( $request instanceof \WP_REST_Request ) || ! self::is_import_request( $request ) ) {
 			return $result;
 		}
 		$method = strtoupper( $request->get_method() );
@@ -223,7 +258,131 @@ class Auth {
 				array( 'status' => 403 )
 			);
 		}
+		if ( ! self::is_allowed_route( $request->get_route() ) ) {
+			return new \WP_Error(
+				'mindful_import_route_denied',
+				__( 'Mindful Import access is limited to content routes.', 'mindful-import' ),
+				array( 'status' => 403 )
+			);
+		}
 		return $result;
+	}
+
+	/**
+	 * Route prefixes an import request may reach: this plugin's namespace, every REST-visible post
+	 * type and taxonomy, and core's users, comments, types, taxonomies, statuses and search (the
+	 * REST index is always allowed). Everything else is refused even on GET, because routes such as
+	 * the oembed proxy, the block renderer, plugins, themes, settings and site health do work or
+	 * leak with the edit-level capabilities the import user holds during a read.
+	 *
+	 * @return string[] Prefixes such as "/wp/v2/posts".
+	 */
+	public static function allowed_routes() {
+		if ( null !== self::$allowed_routes ) {
+			return self::$allowed_routes;
+		}
+		$routes = array( '/' . MINDFUL_IMPORT_REST_NAMESPACE );
+		foreach ( array( 'users', 'comments', 'types', 'taxonomies', 'statuses', 'search' ) as $base ) {
+			$routes[] = '/wp/v2/' . $base;
+		}
+		foreach ( get_post_types( array( 'show_in_rest' => true ), 'objects' ) as $type ) {
+			$routes[] = self::object_route( $type );
+		}
+		foreach ( get_taxonomies( array( 'show_in_rest' => true ), 'objects' ) as $taxonomy ) {
+			$routes[] = self::object_route( $taxonomy );
+		}
+
+		/**
+		 * Filters the route prefixes an import request may reach.
+		 *
+		 * @param string[] $routes Route prefixes, e.g. "/wp/v2/posts". A prefix matches itself and
+		 *                         anything below it.
+		 */
+		$routes = apply_filters( 'mindful_import_allowed_routes', array_values( array_unique( $routes ) ) );
+
+		self::$allowed_routes = array_values( array_filter( array_map( 'strval', (array) $routes ) ) );
+		return self::$allowed_routes;
+	}
+
+	/**
+	 * The REST route prefix of a post type or taxonomy object.
+	 *
+	 * @param \WP_Post_Type|\WP_Taxonomy $object Object.
+	 * @return string
+	 */
+	private static function object_route( $object ) {
+		$namespace = ! empty( $object->rest_namespace ) ? $object->rest_namespace : 'wp/v2';
+		$base      = ! empty( $object->rest_base ) ? $object->rest_base : $object->name;
+		return '/' . trim( $namespace, '/' ) . '/' . trim( $base, '/' );
+	}
+
+	/**
+	 * Whether a route is the index or sits under an allowed prefix.
+	 *
+	 * @param string $route Route, e.g. "/wp/v2/posts/12".
+	 * @return bool
+	 */
+	private static function is_allowed_route( $route ) {
+		$route = '/' . ltrim( (string) $route, '/' );
+		if ( '/' === $route ) {
+			return true;
+		}
+		foreach ( self::allowed_routes() as $prefix ) {
+			$prefix = '/' . trim( $prefix, '/' );
+			if ( $route === $prefix || 0 === strpos( $route, $prefix . '/' ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * `user_has_cap`: the import user's effective capabilities. During a read-only REST request it
+	 * holds the edit-level reads core REST needs for context=edit and non-published statuses.
+	 * Anywhere else (admin, ajax, cron, CLI, or any code impersonating it) it is a plain subscriber,
+	 * whatever the stored role says.
+	 *
+	 * @param array    $allcaps Capabilities the user has.
+	 * @param string[] $caps    Primitive capabilities being checked.
+	 * @param array    $args    Arguments to the check.
+	 * @param \WP_User $user    User.
+	 * @return array
+	 */
+	public static function user_has_cap( $allcaps, $caps, $args, $user ) {
+		if ( ! ( $user instanceof \WP_User ) || MINDFUL_IMPORT_USER_LOGIN !== $user->user_login ) {
+			return $allcaps;
+		}
+		if ( self::is_read_only_rest_request() && self::is_import_request() ) {
+			return array_merge( (array) $allcaps, self::request_caps() );
+		}
+		return array( 'read' => true );
+	}
+
+	/**
+	 * Whether this is a REST request whose method is GET, HEAD or OPTIONS, both as sent and after
+	 * the _method / X-HTTP-Method-Override overrides core honours.
+	 *
+	 * @return bool
+	 */
+	private static function is_read_only_rest_request() {
+		if ( ! defined( 'REST_REQUEST' ) || ! REST_REQUEST || ! self::is_rest_uri() ) {
+			return false;
+		}
+		$safe   = array( 'GET', 'HEAD', 'OPTIONS' );
+		$method = isset( $_SERVER['REQUEST_METHOD'] ) ? strtoupper( sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) ) : '';
+		if ( ! in_array( $method, $safe, true ) ) {
+			return false;
+		}
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- method check only.
+		if ( isset( $_GET['_method'] ) ) {
+			// phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			$override = strtoupper( sanitize_text_field( wp_unslash( $_GET['_method'] ) ) );
+		} elseif ( isset( $_SERVER['HTTP_X_HTTP_METHOD_OVERRIDE'] ) ) {
+			$override = strtoupper( sanitize_text_field( wp_unslash( $_SERVER['HTTP_X_HTTP_METHOD_OVERRIDE'] ) ) );
+		} else {
+			return true;
+		}
+		return in_array( $override, $safe, true );
 	}
 
 	/**
@@ -260,34 +419,27 @@ class Auth {
 	}
 
 	/**
-	 * Stores last_seen at most once per 60 seconds.
+	 * Capabilities stored on the import role: read only. Everything core REST needs for
+	 * context=edit and non-published statuses is granted per request by user_has_cap().
+	 *
+	 * @return array<string,bool>
 	 */
-	private static function record_last_seen() {
-		$last = Settings::get( 'last_seen', array() );
-		$now  = time();
-		if ( is_array( $last ) && ! empty( $last['at'] ) && ( $now - (int) $last['at'] ) < 60 ) {
-			return;
-		}
-		$ip = isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '';
-		if ( '' !== $ip && false === filter_var( $ip, FILTER_VALIDATE_IP ) ) {
-			$ip = '';
-		}
-		Settings::update(
-			array(
-				'last_seen' => array(
-					'at' => $now,
-					'ip' => $ip,
-				),
-			)
-		);
+	private static function role_caps() {
+		return array( 'read' => true );
 	}
 
 	/**
-	 * Capabilities for the import role (read + edit-level reads; no publish/delete/manage_options).
+	 * Capabilities the import user holds for the duration of a read-only REST request: the
+	 * edit-level reads core REST requires, for posts, pages and every REST-visible post type and
+	 * taxonomy, including ones with their own capability_type. Never publish, delete, upload or
+	 * anything in NEVER_GRANT.
 	 *
-	 * @return array
+	 * @return array<string,bool>
 	 */
-	private static function role_caps() {
+	private static function request_caps() {
+		if ( null !== self::$request_caps ) {
+			return self::$request_caps;
+		}
 		$caps = array(
 			'read',
 			'read_private_posts',
@@ -301,14 +453,32 @@ class Auth {
 			'edit_private_pages',
 			'edit_published_pages',
 			'list_users',
-			'upload_files',
 			'manage_categories',
 		);
-		return array_fill_keys( $caps, true );
+		foreach ( get_post_types( array( 'show_in_rest' => true ), 'objects' ) as $type ) {
+			foreach ( array( 'read_private_posts', 'edit_posts', 'edit_others_posts', 'edit_private_posts', 'edit_published_posts' ) as $cap ) {
+				if ( ! empty( $type->cap->$cap ) ) {
+					$caps[] = (string) $type->cap->$cap;
+				}
+			}
+		}
+		foreach ( get_taxonomies( array( 'show_in_rest' => true ), 'objects' ) as $taxonomy ) {
+			foreach ( array( 'manage_terms', 'edit_terms', 'assign_terms' ) as $cap ) {
+				if ( ! empty( $taxonomy->cap->$cap ) ) {
+					$caps[] = (string) $taxonomy->cap->$cap;
+				}
+			}
+		}
+		$grant = array_fill_keys( array_diff( array_unique( $caps ), self::NEVER_GRANT ), true );
+		if ( did_action( 'init' ) && ! doing_action( 'init' ) ) {
+			self::$request_caps = $grant; // Every type registered during init is known now.
+		}
+		return $grant;
 	}
 
 	/**
-	 * Creates (or repairs) the role and the import user.
+	 * Creates (or repairs) the role and the import user. Capabilities the role should not hold
+	 * (older versions stored edit-level ones) are removed.
 	 *
 	 * @return int Import user id (0 on failure).
 	 */
@@ -318,6 +488,11 @@ class Auth {
 		if ( ! $role ) {
 			add_role( MINDFUL_IMPORT_ROLE, 'Mindful Import', $caps );
 		} else {
+			foreach ( array_keys( (array) $role->capabilities ) as $cap ) {
+				if ( ! isset( $caps[ $cap ] ) ) {
+					$role->remove_cap( $cap );
+				}
+			}
 			foreach ( $caps as $cap => $grant ) {
 				if ( ! $role->has_cap( $cap ) ) {
 					$role->add_cap( $cap, true );
