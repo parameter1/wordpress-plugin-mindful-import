@@ -42,6 +42,7 @@ class Plugin {
 		Redirects::init();
 		REST::init();
 		Updater::init();
+		Registration::init();
 
 		if ( did_action( 'plugins_loaded' ) ) {
 			self::maybe_upgrade();
@@ -53,7 +54,10 @@ class Plugin {
 	/**
 	 * Runs once per plugin version, since auto-updates and mu-plugin installs never fire the
 	 * activation hook: fills in new defaults, resets the role's capabilities, makes sure the
-	 * retention cron exists and drops change-log rows about the service account.
+	 * retention cron exists, drops change-log rows about the service account and, when the site is
+	 * not registered yet, queues a registration attempt on WP-Cron (never inline: this can run on any
+	 * front-end request). A failed attempt restores the existing key, so a key Mindful already holds
+	 * keeps working.
 	 */
 	public static function maybe_upgrade() {
 		if ( MINDFUL_IMPORT_VERSION === (string) Settings::get( 'installed_version', '' ) ) {
@@ -65,10 +69,15 @@ class Plugin {
 		Changelog::forget_import_user();
 		Settings::delete( 'last_seen' ); // Pre-release versions recorded the last key use here.
 		Settings::update( array( 'installed_version' => MINDFUL_IMPORT_VERSION ) );
+		if ( 'registered' !== (string) Settings::get( 'registration_status', '' ) ) {
+			Registration::schedule_now();
+		}
 	}
 
 	/**
-	 * Activation: defaults, role + user, change-log table, retention cron.
+	 * Activation: defaults, role + user, change-log table, retention cron, then import registration
+	 * (inline: activation runs in an admin or CLI request, so a blocking call is fine). The outcome
+	 * is recorded in the settings; a failure schedules retries.
 	 */
 	public static function activate() {
 		Settings::ensure_defaults();
@@ -76,12 +85,15 @@ class Plugin {
 		Changelog::install_table();
 		Changelog::schedule_retention();
 		Settings::update( array( 'installed_version' => MINDFUL_IMPORT_VERSION ) );
+		Registration::register();
 	}
 
 	/**
-	 * Deactivation: stop the retention cron. Data is kept until uninstall.
+	 * Deactivation: stop the retention cron and any pending registration retry. Data is kept until
+	 * uninstall.
 	 */
 	public static function deactivate() {
 		Changelog::unschedule_retention();
+		Registration::unschedule();
 	}
 }

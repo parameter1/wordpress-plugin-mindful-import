@@ -16,17 +16,17 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class Settings {
 
-	const PAGE_SLUG    = 'mindful-import';
-	const NONCE_SAVE   = 'mindful_import_save';
-	const NONCE_KEY    = 'mindful_import_generate_key';
-	const CAPABILITY   = 'manage_options';
+	const PAGE_SLUG      = 'mindful-import';
+	const NONCE_SAVE     = 'mindful_import_save';
+	const NONCE_REGISTER = 'mindful_import_register';
+	const CAPABILITY     = 'manage_options';
 
 	/**
-	 * Plaintext key generated during this request (shown once, never stored).
+	 * Outcome of a registration started from the settings page during this request.
 	 *
-	 * @var string|null
+	 * @var true|\WP_Error|null
 	 */
-	private static $new_key = null;
+	private static $registration_result = null;
 
 	/**
 	 * Whether settings were saved during this request.
@@ -41,6 +41,7 @@ class Settings {
 	public static function init() {
 		if ( is_admin() ) {
 			add_action( 'admin_menu', array( __CLASS__, 'admin_menu' ) );
+			add_action( 'admin_notices', array( __CLASS__, 'registration_notice' ) );
 		}
 	}
 
@@ -51,12 +52,17 @@ class Settings {
 	 */
 	public static function defaults() {
 		return array(
-			'key_hash'          => '',
-			'key_salt'          => '',
-			'key_created_at'    => 0,
-			'post_types'        => array(),
-			'taxonomies'        => array(),
-			'options_allowlist' => array(
+			'key_hash'                     => '',
+			'key_salt'                     => '',
+			'key_created_at'               => 0,
+			'registration_status'          => '',
+			'registered_at'                => 0,
+			'registration_error'           => '',
+			'registration_attempts'        => 0,
+			'registration_last_attempt_at' => 0,
+			'post_types'                   => array(),
+			'taxonomies'                   => array(),
+			'options_allowlist'            => array(
 				'blogname',
 				'blogdescription',
 				'siteurl',
@@ -77,11 +83,11 @@ class Settings {
 				'stylesheet',
 				'template',
 			),
-			'options_prefixes'  => array( 'wpseo_', 'aioseo_' ),
-			'retention_days'    => 90,
-			'render_enabled'    => true,
-			'import_user_id'    => 0,
-			'installed_version' => '',
+			'options_prefixes'             => array( 'wpseo_', 'aioseo_' ),
+			'retention_days'               => 90,
+			'render_enabled'               => true,
+			'import_user_id'               => 0,
+			'installed_version'            => '',
 		);
 	}
 
@@ -180,9 +186,9 @@ class Settings {
 		}
 		$action = sanitize_key( wp_unslash( $_POST['mindful_import_action'] ) );
 
-		if ( 'generate_key' === $action ) {
-			check_admin_referer( self::NONCE_KEY );
-			self::$new_key = Auth::generate_key();
+		if ( 'register' === $action ) {
+			check_admin_referer( self::NONCE_REGISTER );
+			self::$registration_result = Registration::register();
 			return;
 		}
 
@@ -264,6 +270,69 @@ class Settings {
 	}
 
 	/**
+	 * One-line description of the registration status for the settings page.
+	 *
+	 * @param string $date_format Date and time format.
+	 * @return string
+	 */
+	private static function registration_status_text( $date_format ) {
+		$status = (string) self::get( 'registration_status', '' );
+		if ( 'registered' === $status ) {
+			$at = (int) self::get( 'registered_at', 0 );
+			/* translators: %s: date of the last successful registration. */
+			return sprintf( __( 'Registered with Mindful on %s.', 'mindful-import' ), $at ? wp_date( $date_format, $at ) : __( 'an unknown date', 'mindful-import' ) );
+		}
+		if ( 'failed' === $status ) {
+			$next  = wp_next_scheduled( Registration::CRON_HOOK );
+			$retry = $next
+				/* translators: %s: date and time of the next automatic attempt. */
+				? sprintf( __( 'next retry %s', 'mindful-import' ), wp_date( $date_format, $next ) )
+				: __( 'no further automatic retries', 'mindful-import' );
+			$attempts = (int) self::get( 'registration_attempts', 0 );
+			return sprintf(
+				/* translators: 1: error message, 2: number of failed attempts, 3: next retry time or "no further automatic retries". */
+				_n( 'Registration failed: %1$s (%2$d attempt; %3$s).', 'Registration failed: %1$s (%2$d attempts; %3$s).', $attempts, 'mindful-import' ),
+				(string) self::get( 'registration_error', '' ),
+				$attempts,
+				$retry
+			);
+		}
+		if ( 'pending' === $status || wp_next_scheduled( Registration::CRON_HOOK ) ) {
+			return __( 'Registration pending.', 'mindful-import' );
+		}
+		return __( 'Not registered yet.', 'mindful-import' );
+	}
+
+	/**
+	 * `admin_notices`: warns administrators on the Plugins screen and on this page when the last
+	 * registration attempt failed.
+	 */
+	public static function registration_notice() {
+		if ( ! current_user_can( self::CAPABILITY ) || 'failed' !== (string) self::get( 'registration_status', '' ) ) {
+			return;
+		}
+		if ( null !== self::$registration_result ) {
+			return; // The page reports the attempt it just made.
+		}
+		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+		if ( ! $screen || ! in_array( $screen->id, array( 'plugins', 'settings_page_' . self::PAGE_SLUG ), true ) ) {
+			return;
+		}
+		$page_url = admin_url( 'options-general.php?page=' . self::PAGE_SLUG );
+		?>
+		<div class="notice notice-error">
+			<p>
+				<?php
+				/* translators: %s: error message. */
+				echo esc_html( sprintf( __( 'Mindful Import could not register this site with Mindful: %s.', 'mindful-import' ), (string) self::get( 'registration_error', '' ) ) );
+				?>
+				<a href="<?php echo esc_url( $page_url ); ?>"><?php esc_html_e( 'View registration status', 'mindful-import' ); ?></a>
+			</p>
+		</div>
+		<?php
+	}
+
+	/**
 	 * Renders the settings page.
 	 */
 	public static function render_page() {
@@ -275,6 +344,7 @@ class Settings {
 		$tax_flags    = (array) self::get( 'taxonomies', array() );
 		$created_at   = (int) self::get( 'key_created_at', 0 );
 		$has_key      = '' !== (string) self::get( 'key_hash', '' );
+		$registered   = 'registered' === (string) self::get( 'registration_status', '' );
 		$user_id      = Auth::import_user_id();
 		$discovery    = rest_url( MINDFUL_IMPORT_REST_NAMESPACE . '/discovery' );
 		$date_format  = get_option( 'date_format' ) . ' ' . get_option( 'time_format' );
@@ -283,19 +353,26 @@ class Settings {
 		<div class="wrap">
 			<h1><?php esc_html_e( 'Mindful Import', 'mindful-import' ); ?></h1>
 
-			<?php if ( null !== self::$new_key ) : ?>
-				<div class="notice notice-warning">
-					<p><strong><?php esc_html_e( 'New import key generated. Copy it now: it will not be shown again.', 'mindful-import' ); ?></strong></p>
-					<p><input type="text" class="large-text code" readonly value="<?php echo esc_attr( self::$new_key ); ?>" onclick="this.select();" /></p>
-					<p><?php esc_html_e( 'Any previous key stopped working when this one was generated.', 'mindful-import' ); ?></p>
-				</div>
+			<?php if ( true === self::$registration_result ) : ?>
+				<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Registered with Mindful. Any previous key has stopped working.', 'mindful-import' ); ?></p></div>
+			<?php elseif ( is_wp_error( self::$registration_result ) ) : ?>
+				<div class="notice notice-error is-dismissible"><p>
+					<?php
+					/* translators: %s: error message. */
+					echo esc_html( sprintf( __( 'Registration with Mindful failed: %s. The previous key, if any, still works.', 'mindful-import' ), self::$registration_result->get_error_message() ) );
+					?>
+				</p></div>
 			<?php endif; ?>
 			<?php if ( self::$saved ) : ?>
 				<div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Settings saved.', 'mindful-import' ); ?></p></div>
 			<?php endif; ?>
 
-			<h2><?php esc_html_e( 'Access key', 'mindful-import' ); ?></h2>
+			<h2><?php esc_html_e( 'Import registration', 'mindful-import' ); ?></h2>
 			<table class="form-table" role="presentation">
+				<tr>
+					<th scope="row"><?php esc_html_e( 'Status', 'mindful-import' ); ?></th>
+					<td><p><?php echo esc_html( self::registration_status_text( $date_format ) ); ?></p></td>
+				</tr>
 				<tr>
 					<th scope="row"><?php esc_html_e( 'Key', 'mindful-import' ); ?></th>
 					<td>
@@ -305,19 +382,14 @@ class Settings {
 								echo esc_html( sprintf( __( 'A key is set (created %s).', 'mindful-import' ), $created_at ? wp_date( $date_format, $created_at ) : __( 'unknown', 'mindful-import' ) ) );
 							?></p>
 						<?php else : ?>
-							<p><?php esc_html_e( 'No key is set. The import endpoints refuse every request until one is generated.', 'mindful-import' ); ?></p>
+							<p><?php esc_html_e( 'No key is set. The import endpoints refuse every request until registration succeeds.', 'mindful-import' ); ?></p>
 						<?php endif; ?>
 						<form method="post" action="<?php echo esc_url( $page_url ); ?>">
-							<?php wp_nonce_field( self::NONCE_KEY ); ?>
-							<input type="hidden" name="mindful_import_action" value="generate_key" />
-							<?php submit_button( $has_key ? __( 'Rotate key', 'mindful-import' ) : __( 'Generate key', 'mindful-import' ), 'secondary', 'submit', false ); ?>
+							<?php wp_nonce_field( self::NONCE_REGISTER ); ?>
+							<input type="hidden" name="mindful_import_action" value="register" />
+							<?php submit_button( $registered ? __( 'Rotate key and re-register', 'mindful-import' ) : __( 'Register with Mindful', 'mindful-import' ), 'secondary', 'submit', false ); ?>
 						</form>
-						<p class="description">
-							<?php
-							/* translators: %s: HTTP header name. */
-							echo esc_html( sprintf( __( 'Send the key on the %s header.', 'mindful-import' ), MINDFUL_IMPORT_HEADER ) );
-							?>
-						</p>
+						<p class="description"><?php esc_html_e( 'Registration generates a new import key and sends it to Mindful over HTTPS. The key is never shown here, and only a hash of it is kept on this site. The previous key stops working once registration succeeds.', 'mindful-import' ); ?></p>
 					</td>
 				</tr>
 				<tr>

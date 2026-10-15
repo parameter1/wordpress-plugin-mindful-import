@@ -386,7 +386,8 @@ class Auth {
 	}
 
 	/**
-	 * Generates a new key, stores its salted hash and returns the plaintext once.
+	 * Generates a new key, stores its salted hash and returns the plaintext once. Only
+	 * Registration::register() calls this; the plaintext goes to Mindful and nowhere else.
 	 *
 	 * @return string
 	 */

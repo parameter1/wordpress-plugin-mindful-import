@@ -14,12 +14,14 @@ global $wpdb;
 $mindful_import_options = get_option( 'mindful_import' );
 
 delete_option( 'mindful_import' );
+delete_option( 'mindful_import_registration_lock' );
 
 $mindful_import_table = $wpdb->prefix . 'mindful_import_changes';
 // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.SchemaChange -- table name is built from $wpdb->prefix only.
 $wpdb->query( "DROP TABLE IF EXISTS `{$mindful_import_table}`" );
 
 wp_clear_scheduled_hook( 'mindful_import_retention' );
+wp_clear_scheduled_hook( 'mindful_import_register' );
 
 require_once ABSPATH . 'wp-admin/includes/user.php';
 

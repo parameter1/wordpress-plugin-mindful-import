@@ -392,16 +392,18 @@ class REST {
 	public static function settings() {
 		return rest_ensure_response(
 			array(
-				'post_types'        => Settings::get( 'post_types', array() ),
-				'taxonomies'        => Settings::get( 'taxonomies', array() ),
-				'options_allowlist' => array_values( (array) Settings::get( 'options_allowlist', array() ) ),
-				'options_prefixes'  => array_values( (array) Settings::get( 'options_prefixes', array() ) ),
-				'retention_days'    => (int) Settings::get( 'retention_days', 90 ),
-				'render_enabled'    => (bool) Settings::get( 'render_enabled', true ),
-				'key_created_at'    => Settings::get( 'key_created_at' ),
-				'import_user_id'    => (int) Auth::import_user_id(),
-				'version'           => MINDFUL_IMPORT_VERSION,
-				'hook_api'          => MINDFUL_IMPORT_HOOK_API,
+				'post_types'          => Settings::get( 'post_types', array() ),
+				'taxonomies'          => Settings::get( 'taxonomies', array() ),
+				'options_allowlist'   => array_values( (array) Settings::get( 'options_allowlist', array() ) ),
+				'options_prefixes'    => array_values( (array) Settings::get( 'options_prefixes', array() ) ),
+				'retention_days'      => (int) Settings::get( 'retention_days', 90 ),
+				'render_enabled'      => (bool) Settings::get( 'render_enabled', true ),
+				'key_created_at'      => Settings::get( 'key_created_at' ),
+				'registration_status' => (string) Settings::get( 'registration_status', '' ),
+				'registered_at'       => (int) Settings::get( 'registered_at', 0 ),
+				'import_user_id'      => (int) Auth::import_user_id(),
+				'version'             => MINDFUL_IMPORT_VERSION,
+				'hook_api'            => MINDFUL_IMPORT_HOOK_API,
 			)
 		);
 	}
