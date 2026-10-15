@@ -194,8 +194,8 @@ reg_setting() { wpv eval "echo Mindful_Import\\Settings::get( '$1' );"; }
 if [ "$(reg_setting registration_status)" = "registered" ]; then pass "registration: status is registered"
 else fail "registration: status is registered" "$(reg_setting registration_status)"; fi
 LAST=$(last_reg)
-if [ "$(printf '%s' "$LAST" | jq -r '.site // empty' 2>/dev/null)" = "localhost" ]; then pass "registration: receiver got site=localhost"
-else fail "registration: receiver got site=localhost" "$(printf '%s' "$LAST" | jq -c '.site' 2>/dev/null)"; fi
+if printf '%s' "$LAST" | jq -e '.rest_url | type=="string" and startswith("http://localhost")' >/dev/null 2>&1; then pass "registration: receiver got rest_url starting with http://localhost"
+else fail "registration: receiver got rest_url starting with http://localhost" "$(printf '%s' "$LAST" | jq -c '.rest_url' 2>/dev/null)"; fi
 if printf '%s' "$LAST" | jq -e '.user_agent | test("^Mindful-Import/")' >/dev/null 2>&1; then pass "registration: user agent is Mindful-Import/<version>"
 else fail "registration: user agent is Mindful-Import/<version>"; fi
 REGKEY=$(printf '%s' "$LAST" | jq -r '.key // empty' 2>/dev/null)

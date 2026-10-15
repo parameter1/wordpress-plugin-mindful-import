@@ -27,7 +27,7 @@ define( 'MINDFUL_IMPORT_OPTION', 'mindful_import' );
 define( 'MINDFUL_IMPORT_ROLE', 'mindful_import' );
 define( 'MINDFUL_IMPORT_USER_LOGIN', 'mindful-import' );
 
-// Where import registration sends the hostname and key. wp-config.php may define it first; a non-https
+// Where import registration sends the site's REST URL and key. wp-config.php may define it first; a non-https
 // URL is refused unless WP_ENVIRONMENT_TYPE is local or development.
 if ( ! defined( 'MINDFUL_IMPORT_REGISTRATION_URL' ) ) {
 	define( 'MINDFUL_IMPORT_REGISTRATION_URL', 'https://apis.mindfulcms.com/import/register' );

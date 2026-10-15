@@ -1,6 +1,6 @@
 <?php
 /**
- * Import registration: generates the import key and sends it, with the site's hostname, to Mindful.
+ * Import registration: generates the import key and sends it, with the site's REST URL, to Mindful.
  *
  * @package Mindful_Import
  */
@@ -77,7 +77,9 @@ class Registration {
 	}
 
 	/**
-	 * Generates a new import key and registers it, with the site's hostname, with Mindful.
+	 * Generates a new import key and registers it, with the site's REST URL, with Mindful. The REST
+	 * URL (rest_url()) carries the scheme and any subdirectory, so Mindful can reach the discovery
+	 * route directly.
 	 *
 	 * The new key is live before the request is sent, so Mindful can verify it against the
 	 * discovery route while the request is open. On failure the previous key (or no key) is restored
@@ -102,9 +104,9 @@ class Registration {
 			return $error;
 		}
 
-		$host = (string) wp_parse_url( home_url(), PHP_URL_HOST );
-		if ( '' === $host ) {
-			$error = new \WP_Error( 'mindful_import_registration_host', __( 'The site address has no hostname.', 'mindful-import' ) );
+		$rest_url = (string) rest_url();
+		if ( '' === (string) wp_parse_url( $rest_url, PHP_URL_HOST ) ) {
+			$error = new \WP_Error( 'mindful_import_registration_host', __( 'The REST URL of this site has no hostname. Check the Site Address (URL) under Settings, General.', 'mindful-import' ) );
 			Settings::update(
 				array(
 					'registration_status'          => 'failed',
@@ -129,8 +131,8 @@ class Registration {
 			$plain = Auth::generate_key();
 			$body  = wp_json_encode(
 				array(
-					'site' => $host,
-					'key'  => $plain,
+					'rest_url' => $rest_url,
+					'key'      => $plain,
 				)
 			);
 

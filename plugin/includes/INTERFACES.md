@@ -33,8 +33,8 @@ Namespace `Mindful_Import`, one class per file, static methods, no autoloader (e
   Constant `MINDFUL_IMPORT_REGISTRATION_URL` (default `https://apis.mindfulcms.com/import/register`, defined only if
   wp-config.php has not defined it).
   `Registration::register(): true|WP_Error` — validates the URL, snapshots `key_hash`/`key_salt`/`key_created_at`,
-  calls `Auth::generate_key()` (the new key is live during the request), POSTs `{"site": <home host>, "key": <plain>}`
-  as JSON (no redirects, TLS verified, 15 s). 2xx → `registered`, attempts reset, retry cleared. Anything else →
+  calls `Auth::generate_key()` (the new key is live during the request), POSTs `{"rest_url": rest_url(), "key": <plain>}`
+  as JSON (no redirects, TLS verified, 15 s). A `rest_url()` with no host fails before any key change. 2xx → `registered`, attempts reset, retry cleared. Anything else →
   snapshot restored, `failed`, attempts + 1, `schedule_retry()`. Holds an option lock
   (`mindful_import_registration_lock`) so two attempts cannot interleave.
   `Registration::is_url_allowed( string $url, ?string $environment_type = null ): bool` — host required; `https`, or

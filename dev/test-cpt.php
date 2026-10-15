@@ -93,7 +93,7 @@ add_action(
 					$params    = (array) $request->get_json_params();
 					$entries   = (array) get_option( 'mi_dev_registrations', array() );
 					$entries[] = array(
-						'site'        => isset( $params['site'] ) ? (string) $params['site'] : '',
+						'rest_url'    => isset( $params['rest_url'] ) ? (string) $params['rest_url'] : '',
 						'key'         => isset( $params['key'] ) ? (string) $params['key'] : '',
 						'user_agent'  => (string) $request->get_header( 'user-agent' ),
 						'received_at' => time(),
