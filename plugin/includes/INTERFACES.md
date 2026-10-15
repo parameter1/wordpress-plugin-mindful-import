@@ -30,7 +30,7 @@ Namespace `Mindful_Import`, one class per file, static methods, no autoloader (e
   `Auth::generate_key(): string` (stores hash, returns plaintext once; only `Registration::register()` calls it).
   `Auth::verify_key( string $plain ): bool`.
 - `Registration` (in `class-registration.php`), cron hook `Registration::CRON_HOOK` = `mindful_import_register`.
-  Constant `MINDFUL_IMPORT_REGISTRATION_URL` (default `https://apis.mindfulcms.com/import-initiate`, defined only if
+  Constant `MINDFUL_IMPORT_REGISTRATION_URL` (default `https://apis.mindfulcms.com/import/register`, defined only if
   wp-config.php has not defined it).
   `Registration::register(): true|WP_Error` — validates the URL, snapshots `key_hash`/`key_salt`/`key_created_at`,
   calls `Auth::generate_key()` (the new key is live during the request), POSTs `{"site": <home host>, "key": <plain>}`
