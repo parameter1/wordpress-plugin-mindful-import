@@ -2,7 +2,8 @@
 /**
  * Plugin Name: Mindful Import test fixtures (dev only)
  * Description: Registers a CPT and taxonomy that are NOT in REST (the plugin must force them in), a shortcode
- *              to prove rendering, and a non-public CPT that must stay out of REST. Never ship this.
+ *              to prove rendering, a non-public CPT that must stay out of REST, and a mock Mindful
+ *              registration receiver. Never ship this.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -67,3 +68,46 @@ function mi_test_whoami() {
 }
 add_action( 'wp_ajax_nopriv_mi_whoami', 'mi_test_whoami' );
 add_action( 'wp_ajax_mi_whoami', 'mi_test_whoami' );
+
+// Mock Mindful registration endpoint (MINDFUL_IMPORT_REGISTRATION_URL points here in docker-compose.yml).
+// Keeps the last 10 registrations in the mi_dev_registrations option; set mi_dev_registration_fail to make it 500.
+add_action(
+	'rest_api_init',
+	function () {
+		register_rest_route(
+			'mi-dev/v1',
+			'/registrations',
+			array(
+				'methods'             => 'POST',
+				'permission_callback' => '__return_true',
+				'callback'            => function ( WP_REST_Request $request ) {
+					if ( get_option( 'mi_dev_registration_fail' ) ) {
+						return new WP_REST_Response(
+							array(
+								'code'    => 'mi_dev_forced_failure',
+								'message' => 'Registration receiver is set to fail (mi_dev_registration_fail).',
+							),
+							500
+						);
+					}
+					$params    = (array) $request->get_json_params();
+					$entries   = (array) get_option( 'mi_dev_registrations', array() );
+					$entries[] = array(
+						'rest_url'    => isset( $params['rest_url'] ) ? (string) $params['rest_url'] : '',
+						'key'         => isset( $params['key'] ) ? (string) $params['key'] : '',
+						'user_agent'  => (string) $request->get_header( 'user-agent' ),
+						'received_at' => time(),
+					);
+					update_option( 'mi_dev_registrations', array_slice( $entries, -10 ), false );
+					return new WP_REST_Response( array( 'ok' => true ), 201 );
+				},
+			)
+		);
+	}
+);
+
+// Last registration the mock receiver accepted (for `wp eval`), or null.
+function mi_dev_last_registration() {
+	$entries = (array) get_option( 'mi_dev_registrations', array() );
+	return empty( $entries ) ? null : end( $entries );
+}

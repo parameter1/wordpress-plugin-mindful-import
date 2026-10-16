@@ -3,7 +3,7 @@
  * Plugin Name: Mindful Import
  * Plugin URI: https://github.com/parameter1/wordpress-plugin-mindful-import
  * Description: Exposes the data a Mindful CMS import needs (post meta on every post type, a change log, users, term meta, allowlisted options and redirect rules) behind a key sent on the X-Mindful-Import-Key header. Read-only.
- * Version: 0.1.1
+ * Version: 0.2.0
  * Requires at least: 6.0
  * Requires PHP: 7.4
  * Author: Parameter1
@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'MINDFUL_IMPORT_VERSION', '0.1.1' );
+define( 'MINDFUL_IMPORT_VERSION', '0.2.0' );
 define( 'MINDFUL_IMPORT_HOOK_API', 1 );
 define( 'MINDFUL_IMPORT_FILE', __FILE__ );
 define( 'MINDFUL_IMPORT_DIR', plugin_dir_path( __FILE__ ) );
@@ -27,9 +27,16 @@ define( 'MINDFUL_IMPORT_OPTION', 'mindful_import' );
 define( 'MINDFUL_IMPORT_ROLE', 'mindful_import' );
 define( 'MINDFUL_IMPORT_USER_LOGIN', 'mindful-import' );
 
+// Where import registration sends the site's REST URL and key. wp-config.php may define it first; a non-https
+// URL is refused unless WP_ENVIRONMENT_TYPE is local or development.
+if ( ! defined( 'MINDFUL_IMPORT_REGISTRATION_URL' ) ) {
+	define( 'MINDFUL_IMPORT_REGISTRATION_URL', 'https://apis.mindfulcms.com/import/wordpress/register' );
+}
+
 require_once MINDFUL_IMPORT_DIR . 'includes/hooks.php';
 require_once MINDFUL_IMPORT_DIR . 'includes/class-settings.php';
 require_once MINDFUL_IMPORT_DIR . 'includes/class-auth.php';
+require_once MINDFUL_IMPORT_DIR . 'includes/class-registration.php';
 require_once MINDFUL_IMPORT_DIR . 'includes/class-post-types.php';
 require_once MINDFUL_IMPORT_DIR . 'includes/class-fields.php';
 require_once MINDFUL_IMPORT_DIR . 'includes/class-changelog.php';
