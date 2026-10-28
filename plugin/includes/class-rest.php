@@ -236,7 +236,10 @@ class REST {
 				'retention_days'     => (int) Settings::get( 'retention_days', 90 ),
 				'render_enabled'     => (bool) Settings::get( 'render_enabled', true ),
 			),
-			'changes'      => array( 'head_id' => Changelog::head_id() ),
+			'changes'      => array(
+				'head_id'   => Changelog::head_id(),
+				'oldest_id' => Changelog::oldest_id(),
+			),
 			'generated_at' => gmdate( 'c' ),
 		);
 

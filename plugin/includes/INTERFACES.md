@@ -47,7 +47,7 @@ Namespace `Mindful_Import`, one class per file, static methods, no autoloader (e
   Classes call it from the `rest_api_init` action (REST::init hooks `rest_api_init` at priority 5 and fires
   `do_action( 'mindful_import_register_resource', MINDFUL_IMPORT_REST_NAMESPACE )` at priority 20).
 - `Changelog::record( string $object_type, int $object_id, string $action, array $extra = array() )`.
-  `Changelog::head_id(): int`. `Changelog::install_table()`.
+  `Changelog::head_id(): int` (MAX(id), 0 when empty). `Changelog::oldest_id(): int` (MIN(id), 0 when empty). `Changelog::install_table()`.
 - `Redirects::all(): array{providers: string[], redirects: array<array{source,target,code,enabled,provider}>}`.
 - `Fields::flatten_meta( array $meta ): array` — the old base-imports shape (single-value arrays flattened,
   `.` → `__`).

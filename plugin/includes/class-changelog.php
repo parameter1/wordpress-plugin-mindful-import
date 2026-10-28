@@ -427,6 +427,21 @@ class Changelog {
 	}
 
 	/**
+	 * Lowest retained change id, or 0 when the table is empty.
+	 *
+	 * Ids are AUTO_INCREMENT and can have gaps (a rolled-back or failed insert burns an id), so a
+	 * gap between a stored head and the first returned id does not mean rows were pruned. The log
+	 * was pruned past a stored head only when that head < oldest_id - 1.
+	 *
+	 * @return int
+	 */
+	public static function oldest_id() {
+		global $wpdb;
+		$table = self::table();
+		return (int) $wpdb->get_var( "SELECT MIN(id) FROM {$table}" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	}
+
+	/**
 	 * Schedules the daily retention job.
 	 */
 	public static function schedule_retention() {
@@ -564,6 +579,7 @@ class Changelog {
 			array(
 				'changes'    => $changes,
 				'head_id'    => self::head_id(),
+				'oldest_id'  => self::oldest_id(),
 				'has_more'   => $has_more,
 				'next_after' => $last ? (int) $last['id'] : $after,
 			)
@@ -585,9 +601,10 @@ class Changelog {
 
 		return rest_ensure_response(
 			array(
-				'head_id' => $row ? (int) $row->id : 0,
-				'latest'  => $row ? self::format_row( $row ) : null,
-				'count'   => $count,
+				'head_id'   => $row ? (int) $row->id : 0,
+				'oldest_id' => self::oldest_id(),
+				'latest'    => $row ? self::format_row( $row ) : null,
+				'count'     => $count,
 			)
 		);
 	}
