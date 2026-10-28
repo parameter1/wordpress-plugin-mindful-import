@@ -78,6 +78,14 @@ These fields are registered only on key-authenticated requests. Anonymous respon
 - `term_meta_fields` on every public taxonomy (same shape).
 - `mindful_rendered_content` on non-attachment post types when the request adds `?mindful_render=1`. This is
   `the_content` with shortcodes and blocks rendered. It can be turned off in settings.
+- `min_id` (integer, `ID >= min_id`) on every post-like collection: `wp/v2/posts`, `pages`, `media` and every
+  REST-visible CPT (terms and users do not have it). It is an id cursor: page with
+  `orderby=id&order=asc&min_id=<last id + 1>` (keeping `page=1`) so an item trashed on an earlier page mid-run
+  cannot shift a later one out of the window. `X-WP-Total` counts only ids `>= min_id`. A non-integer or
+  negative value answers **400** `rest_invalid_param`, exactly as core does for `page`; `0` means no lower
+  bound. It is listed in the route's `OPTIONS` `args`. **Key requests only:** without the key the parameter is
+  not registered, so core ignores it like any unknown query arg (no filtering, no 400) and the response is
+  exactly what core returns.
 - Public post types and taxonomies registered without `show_in_rest` are put into REST (`rest_base` = name),
   so a CPT the theme hid from REST can still be imported. This happens only on key-authenticated requests:
   anonymous visitors still get a 404 for such a type, and the admin (including the classic-versus-block
