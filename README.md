@@ -130,7 +130,9 @@ burns one): a gap between a stored head and the first id returned does **not** m
 log has been pruned past a stored head only when `stored_head < oldest_id - 1`; then a full re-copy is needed.
 
 A daily
-WP-Cron job deletes entries older than `retention_days` (default 90, minimum 7); it is scheduled on activation
+WP-Cron job deletes entries older than `retention_days` (default 90, minimum 7), always keeping the newest
+entry, so `head_id` never goes backwards and an empty table only ever means a fresh install (a quiet site reads
+`oldest_id == head_id`); it is scheduled on activation
 and again on the first load of each new version, so mu-plugin installs, which never activate, get it too.
 
 ## Configuration (Settings → Mindful Import)

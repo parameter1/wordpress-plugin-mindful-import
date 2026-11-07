@@ -205,6 +205,11 @@ else
   wp option patch delete mindful_import installed_version >/dev/null 2>&1
   wp user update mindful-import --display_name="Mindful Import" >/dev/null 2>&1   # loads the plugin (upgrade runs), then edits the account
   expect_jq "changes: no entries about the plugin's own account (id $IMPORT_ID)" "$API/changes?object_type=user&limit=500" "$ENTRIES | map(select(.object_id == $IMPORT_ID)) | length == 0" "$H"
+
+  # Retention keeps the newest row: head_id never goes backwards, an empty table only means a reinstall.
+  HEAD_BEFORE=$(get "$API/changes/latest" "$H" | jq -r '.head_id // empty')
+  wpv eval 'global $wpdb; $wpdb->query( "UPDATE " . Mindful_Import\Changelog::table() . " SET changed_at = DATE_SUB(UTC_TIMESTAMP(), INTERVAL 200 DAY)" ); echo Mindful_Import\Changelog::run_retention();' >/dev/null
+  expect_jq "retention: all rows backdated past retention_days leaves exactly the newest (count 1, head_id $HEAD_BEFORE unchanged)" "$API/changes/latest" ".count == 1 and .head_id == ${HEAD_BEFORE:-null} and .oldest_id == ${HEAD_BEFORE:-null}" "$H"
 fi
 
 echo "== redirects"

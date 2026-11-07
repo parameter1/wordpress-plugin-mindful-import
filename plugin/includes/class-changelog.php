@@ -458,7 +458,12 @@ class Changelog {
 	}
 
 	/**
-	 * Deletes rows older than retention_days (minimum 7).
+	 * Deletes rows older than retention_days (minimum 7), always keeping the newest row.
+	 *
+	 * The newest row is kept so head_id never goes backwards: an emptied table would read as head 0,
+	 * which an importer cannot tell from a reinstall, and on MySQL 5.7 a restart with the table empty
+	 * resets AUTO_INCREMENT so ids would start over. A quiet site therefore reads oldest_id == head_id
+	 * (not pruned), and an empty table really does mean a fresh install.
 	 *
 	 * @return int Rows deleted.
 	 */
@@ -467,7 +472,8 @@ class Changelog {
 		$days   = max( self::MIN_DAYS, (int) Settings::get( 'retention_days', 90 ) );
 		$cutoff = gmdate( 'Y-m-d H:i:s', time() - $days * DAY_IN_SECONDS );
 		$table  = self::table();
-		return (int) $wpdb->query( $wpdb->prepare( "DELETE FROM {$table} WHERE changed_at < %s", $cutoff ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$head   = self::head_id();
+		return (int) $wpdb->query( $wpdb->prepare( "DELETE FROM {$table} WHERE changed_at < %s AND id < %d", $cutoff, $head ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 	}
 
 	/**
