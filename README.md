@@ -60,12 +60,12 @@ Registration is how the plugin hands its import key to Mindful without anyone se
 
 | Route | Query params | Response |
 |---|---|---|
-| `discovery` | none | `{plugin:{version,hook_api}, wordpress, post_types:[{name,label,public,show_in_rest,rest_base,hierarchical,taxonomies,count}], taxonomies, plugins:[{file,name,version}], theme, settings, changes:{head_id}, …}`: everything needed to plan a run |
+| `discovery` | none | `{plugin:{version,hook_api}, wordpress, post_types:[{name,label,public,show_in_rest,rest_base,hierarchical,taxonomies,count}], taxonomies, plugins:[{file,name,version}], theme, settings, changes:{head_id,oldest_id}, …}`: everything needed to plan a run |
 | `options` | `names` (comma list, narrows the result) | `{options:[{key,value}], denied_count}` |
 | `settings` | none | Plugin settings without secrets: `{post_types, taxonomies, options_allowlist, options_prefixes, retention_days, render_enabled, key_created_at, registration_status, registered_at, version, …}` |
 | `users` | `page` (1), `per_page` (100, max 500) | `[{id,login,email,display_name,nicename,url,registered,roles,first_name,last_name,nickname,description,avatar_url,meta}]`. Includes users with no posts, never the plugin's own `mindful-import` account. Sends `X-WP-Total` / `X-WP-TotalPages` |
-| `changes` | `after` (id, 0), `limit` (100, max 500), `object_type` (`post`/`attachment`/`term`/`user`), `since` (ISO 8601) | `{changes:[{id,object_type,object_id,post_type,taxonomy,action,old_status,new_status,changed_at,user_id}], head_id, has_more, next_after}` |
-| `changes/latest` | none | `{head_id, latest, …}` |
+| `changes` | `after` (id, 0), `limit` (100, max 500), `object_type` (`post`/`attachment`/`term`/`user`), `since` (ISO 8601) | `{changes:[{id,object_type,object_id,post_type,taxonomy,action,old_status,new_status,changed_at,user_id}], head_id, oldest_id, has_more, next_after}` |
+| `changes/latest` | none | `{head_id, oldest_id, latest, count}` |
 | `redirects` | `provider` (`redirection`, `safe-redirect-manager`, `yoast-premium`) | `{providers:[…], redirects:[{source,target,code,enabled,regex,provider,…}], count}` |
 
 ### Fields added to core routes (`/wp-json/wp/v2/…`)
@@ -78,6 +78,14 @@ These fields are registered only on key-authenticated requests. Anonymous respon
 - `term_meta_fields` on every public taxonomy (same shape).
 - `mindful_rendered_content` on non-attachment post types when the request adds `?mindful_render=1`. This is
   `the_content` with shortcodes and blocks rendered. It can be turned off in settings.
+- `min_id` (integer, `ID >= min_id`) on every post-like collection: `wp/v2/posts`, `pages`, `media` and every
+  REST-visible CPT (terms and users do not have it). It is an id cursor: page with
+  `orderby=id&order=asc&min_id=<last id + 1>` (keeping `page=1`) so an item trashed on an earlier page mid-run
+  cannot shift a later one out of the window. `X-WP-Total` counts only ids `>= min_id`. A non-integer or
+  negative value answers **400** `rest_invalid_param`, exactly as core does for `page`; `0` means no lower
+  bound. It is listed in the route's `OPTIONS` `args`. **Key requests only:** without the key the parameter is
+  not registered, so core ignores it like any unknown query arg (no filtering, no 400) and the response is
+  exactly what core returns.
 - Public post types and taxonomies registered without `show_in_rest` are put into REST (`rest_base` = name),
   so a CPT the theme hid from REST can still be imported. This happens only on key-authenticated requests:
   anonymous visitors still get a 404 for such a type, and the admin (including the classic-versus-block
@@ -114,8 +122,17 @@ only, through `user_has_cap`, and are never stored. Outside such a request the a
 A custom table records `create`, `update`, `publish`, `unpublish`, `trash`, `untrash` and `delete` for posts
 (every post type), attachments, terms and users. Each entry carries the old and new status. Ids only ever
 increase, so an importer stores `head_id` (or `next_after`) and later asks for `changes?after=<id>`. Changes
-made by the import user itself are not logged, and neither is that account's own creation or update. A daily
-WP-Cron job deletes entries older than `retention_days` (default 90, minimum 7); it is scheduled on activation
+made by the import user itself are not logged, and neither is that account's own creation or update.
+
+`oldest_id` (on `changes`, `changes/latest` and `discovery.changes`) is the lowest id still in the table, or 0
+when it is empty. Ids come from MySQL `AUTO_INCREMENT`, so they can skip values (a rolled-back or failed insert
+burns one): a gap between a stored head and the first id returned does **not** mean entries were pruned. The
+log has been pruned past a stored head only when `stored_head < oldest_id - 1`; then a full re-copy is needed.
+
+A daily
+WP-Cron job deletes entries older than `retention_days` (default 90, minimum 7), always keeping the newest
+entry, so `head_id` never goes backwards and an empty table only ever means a fresh install (a quiet site reads
+`oldest_id == head_id`); it is scheduled on activation
 and again on the first load of each new version, so mu-plugin installs, which never activate, get it too.
 
 ## Configuration (Settings → Mindful Import)

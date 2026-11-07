@@ -427,6 +427,21 @@ class Changelog {
 	}
 
 	/**
+	 * Lowest retained change id, or 0 when the table is empty.
+	 *
+	 * Ids are AUTO_INCREMENT and can have gaps (a rolled-back or failed insert burns an id), so a
+	 * gap between a stored head and the first returned id does not mean rows were pruned. The log
+	 * was pruned past a stored head only when that head < oldest_id - 1.
+	 *
+	 * @return int
+	 */
+	public static function oldest_id() {
+		global $wpdb;
+		$table = self::table();
+		return (int) $wpdb->get_var( "SELECT MIN(id) FROM {$table}" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	}
+
+	/**
 	 * Schedules the daily retention job.
 	 */
 	public static function schedule_retention() {
@@ -443,7 +458,12 @@ class Changelog {
 	}
 
 	/**
-	 * Deletes rows older than retention_days (minimum 7).
+	 * Deletes rows older than retention_days (minimum 7), always keeping the newest row.
+	 *
+	 * The newest row is kept so head_id never goes backwards: an emptied table would read as head 0,
+	 * which an importer cannot tell from a reinstall, and on MySQL 5.7 a restart with the table empty
+	 * resets AUTO_INCREMENT so ids would start over. A quiet site therefore reads oldest_id == head_id
+	 * (not pruned), and an empty table really does mean a fresh install.
 	 *
 	 * @return int Rows deleted.
 	 */
@@ -452,7 +472,8 @@ class Changelog {
 		$days   = max( self::MIN_DAYS, (int) Settings::get( 'retention_days', 90 ) );
 		$cutoff = gmdate( 'Y-m-d H:i:s', time() - $days * DAY_IN_SECONDS );
 		$table  = self::table();
-		return (int) $wpdb->query( $wpdb->prepare( "DELETE FROM {$table} WHERE changed_at < %s", $cutoff ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$head   = self::head_id();
+		return (int) $wpdb->query( $wpdb->prepare( "DELETE FROM {$table} WHERE changed_at < %s AND id < %d", $cutoff, $head ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 	}
 
 	/**
@@ -564,6 +585,7 @@ class Changelog {
 			array(
 				'changes'    => $changes,
 				'head_id'    => self::head_id(),
+				'oldest_id'  => self::oldest_id(),
 				'has_more'   => $has_more,
 				'next_after' => $last ? (int) $last['id'] : $after,
 			)
@@ -585,9 +607,10 @@ class Changelog {
 
 		return rest_ensure_response(
 			array(
-				'head_id' => $row ? (int) $row->id : 0,
-				'latest'  => $row ? self::format_row( $row ) : null,
-				'count'   => $count,
+				'head_id'   => $row ? (int) $row->id : 0,
+				'oldest_id' => self::oldest_id(),
+				'latest'    => $row ? self::format_row( $row ) : null,
+				'count'     => $count,
 			)
 		);
 	}

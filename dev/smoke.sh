@@ -62,6 +62,7 @@ expect_status "secret_internal: refused even with key (allowlist 403 precedes co
 expect_status "secret_internal: 404 without key" GET "$BASE/wp-json/wp/v2/secret_internal" 404
 expect_jq "discovery: Redirection listed in plugins" "$API/discovery" '[.plugins[] | select(.name|test("Redirection"))] | length > 0' "$H" $((1-REDIR))
 expect_jq "discovery: changes.head_id is a number" "$API/discovery" '.changes.head_id | type=="number"' "$H"
+expect_jq "discovery: changes.oldest_id is a number <= head_id" "$API/discovery" '.changes | (.oldest_id | type=="number") and .oldest_id <= .head_id' "$H"
 
 echo "== core routes: meta fields"
 expect_status "news: 200 with key" GET "$WPV2/news" 200 "$H"
@@ -81,6 +82,34 @@ expect_jq "posts: scheduled listed" "$WPV2/posts?status=future&context=edit" '[.
 expect_status "posts: drafts 200 via ?rest_route= (context=edit)" GET "$BASE/?rest_route=/wp/v2/posts&status=draft&context=edit" 200 "$H"
 expect_status "news: context=edit 200 (own capability_type granted per request)" GET "$WPV2/news?context=edit" 200 "$H"
 expect_jq "posts: _embed author resolves (wp/v2/users stays reachable)" "$P&_embed=author" '.[0]._embedded.author[0].id | type=="number"' "$H"
+
+echo "== core routes: min_id cursor"
+ASC="$WPV2/posts?orderby=id&order=asc&per_page=100"
+MINX=$(get "$ASC" "$H" | jq -r '.[-1].id // empty')
+if [ -z "$MINX" ]; then
+  fail "min_id: prerequisites" "no published posts"
+else
+  expect_jq "min_id: keyed posts?min_id=$MINX returns only ids >= $MINX" "$ASC&min_id=$MINX" "length >= 1 and all(.id >= $MINX)" "$H"
+  expect_jq "min_id: keyed min_id=0 is no lower bound" "$ASC&min_id=0" "length == $(get "$ASC" "$H" | jq length)" "$H"
+  # Without the key the parameter is not registered: core ignores it (no filtering, no 400).
+  expect_jq "min_id: anonymous request ignores min_id (lower ids still returned)" "$ASC&min_id=$MINX" "length == $(get "$ASC" | jq length) and any(.id < $MINX)"
+  if curl -s -D - -o /dev/null -H "$H" "$ASC&min_id=$MINX" | grep -qi '^x-wp-total: *1'; then pass "min_id: X-WP-Total counts only ids >= min_id"
+  else fail "min_id: X-WP-Total counts only ids >= min_id"; fi
+fi
+expect_status "min_id: keyed min_id=-1 is 400" GET "$WPV2/posts?min_id=-1" 400 "$H"
+expect_status "min_id: keyed min_id=abc is 400" GET "$WPV2/posts?min_id=abc" 400 "$H"
+expect_jq "min_id: 400 is core's rest_invalid_param" "$WPV2/posts?min_id=abc" '.code == "rest_invalid_param" and (.data.params | has("min_id"))' "$H"
+expect_status "min_id: anonymous min_id=abc is ignored (200)" GET "$WPV2/posts?min_id=abc" 200
+expect_jq "min_id: pages honours it" "$WPV2/pages?min_id=999999999" 'length == 0' "$H"
+expect_jq "min_id: media honours it" "$WPV2/media?min_id=999999999" 'length == 0' "$H"
+expect_jq "min_id: media keeps lower bound inclusive" "$WPV2/media?orderby=id&order=asc&min_id=1" 'length >= 1' "$H"
+expect_jq "min_id: news CPT honours it" "$WPV2/news?min_id=999999999" 'length == 0' "$H"
+OPT=$(curl -s -X OPTIONS -H "$H" "$WPV2/posts")
+if printf '%s' "$OPT" | jq -e '.endpoints[0].args.min_id.type == "integer"' >/dev/null 2>&1; then pass "min_id: listed in keyed OPTIONS args"
+else fail "min_id: listed in keyed OPTIONS args"; fi
+OPT=$(curl -s -X OPTIONS "$WPV2/posts")
+if printf '%s' "$OPT" | jq -e '.endpoints[0].args | has("min_id") | not' >/dev/null 2>&1; then pass "min_id: absent from anonymous OPTIONS args"
+else fail "min_id: absent from anonymous OPTIONS args"; fi
 
 PUB=$(get "$P" "$H" | jq -r '.[0].id // empty')
 echo "== read-only (published post id: ${PUB:-?})"
@@ -159,6 +188,11 @@ else
   else fail "changes: unpublish, publish, create, trash, delete in order" "$(printf '%s' "$BODY" | jq -c "[$ENTRIES[] | .action]" 2>/dev/null | head -c 300)"; fi
 
   MAXID=$(printf '%s' "$BODY" | jq -r "[$ENTRIES[] | .id] | max // empty")
+  if printf '%s' "$BODY" | jq -e '(.oldest_id | type=="number") and .oldest_id >= 1 and .oldest_id <= .head_id' >/dev/null 2>&1; then pass "changes: oldest_id present and <= head_id"
+  else fail "changes: oldest_id present and <= head_id" "$(printf '%s' "$BODY" | jq -c '{oldest_id, head_id}' 2>/dev/null)"; fi
+  OLDEST=$(wpv eval 'global $wpdb; echo (int) $wpdb->get_var( "SELECT MIN(id) FROM " . Mindful_Import\Changelog::table() );')
+  expect_jq "changes: oldest_id == MIN(id) in the table ($OLDEST)" "$API/changes?limit=1" ".oldest_id == ${OLDEST:-null}" "$H"
+  expect_jq "changes/latest: oldest_id present and <= head_id" "$API/changes/latest" '(.oldest_id | type=="number") and .oldest_id <= .head_id' "$H"
   LATEST=$(get "$API/changes/latest" "$H" | jq -r '.head_id // empty')
   if [ -n "$MAXID" ] && [ "$MAXID" = "$LATEST" ]; then pass "changes/latest head_id == max id ($LATEST)"
   else fail "changes/latest head_id == max id" "latest=$LATEST max=$MAXID"; fi
@@ -171,6 +205,11 @@ else
   wp option patch delete mindful_import installed_version >/dev/null 2>&1
   wp user update mindful-import --display_name="Mindful Import" >/dev/null 2>&1   # loads the plugin (upgrade runs), then edits the account
   expect_jq "changes: no entries about the plugin's own account (id $IMPORT_ID)" "$API/changes?object_type=user&limit=500" "$ENTRIES | map(select(.object_id == $IMPORT_ID)) | length == 0" "$H"
+
+  # Retention keeps the newest row: head_id never goes backwards, an empty table only means a reinstall.
+  HEAD_BEFORE=$(get "$API/changes/latest" "$H" | jq -r '.head_id // empty')
+  wpv eval 'global $wpdb; $wpdb->query( "UPDATE " . Mindful_Import\Changelog::table() . " SET changed_at = DATE_SUB(UTC_TIMESTAMP(), INTERVAL 200 DAY)" ); echo Mindful_Import\Changelog::run_retention();' >/dev/null
+  expect_jq "retention: all rows backdated past retention_days leaves exactly the newest (count 1, head_id $HEAD_BEFORE unchanged)" "$API/changes/latest" ".count == 1 and .head_id == ${HEAD_BEFORE:-null} and .oldest_id == ${HEAD_BEFORE:-null}" "$H"
 fi
 
 echo "== redirects"
